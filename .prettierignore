@@ -1,0 +1,4 @@
+dist/
+model-originals/
+public/models/
+package-lock.json

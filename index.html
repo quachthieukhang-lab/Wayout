@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Way Out</title>
+    <meta name="author" content="Quách Thiếu Khang" />
+    <meta name="theme-color" content="#0a0707" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Grenze+Gotisch:wght@500;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/ui/style.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <div id="fx-danger" class="fx"></div>
+    <div id="fx-vignette" class="fx"></div>
+    <div id="fx-grain" class="fx"></div>
+    <div id="fx-flash" class="fx"></div>
+
+    <div id="crosshair"></div>
+    <div id="hud-eye" class="alert-calm">
+      <div class="eye-shape"><div class="eye-pupil"></div></div>
+      <span id="hud-eye-label"></span>
+    </div>
+    <div id="prompt"></div>
+    <div id="hint" class="hidden">
+      <div id="hint-arrow"></div>
+      <span id="hint-text"></span>
+    </div>
+    <div id="toast"></div>
+    <div id="struggle" class="hidden">
+      <div class="struggle-text">Mash <kbd>SPACE</kbd> to break free!</div>
+      <div class="track"><div id="struggle-fill" class="fill"></div></div>
+    </div>
+
+    <div id="hud">
+      <div id="hud-keys"></div>
+      <div id="hud-carried" class="hidden"></div>
+      <div class="meter">
+        <span>Health</span>
+        <div class="track"><div id="hud-health" class="fill health"></div></div>
+      </div>
+      <div class="meter">
+        <span>Battery</span>
+        <div class="track"><div id="hud-battery" class="fill"></div></div>
+      </div>
+      <div class="meter">
+        <span>Stamina</span>
+        <div class="track"><div id="hud-stamina" class="fill"></div></div>
+      </div>
+      <div class="meter">
+        <span>Noise</span>
+        <div class="track"><div id="hud-noise" class="fill noise"></div></div>
+      </div>
+    </div>
+
+    <div id="overlay">
+      <div class="panel">
+        <h1>Way Out</h1>
+        <p class="byline">A game by Quách Thiếu Khang</p>
+        <p class="story">
+          You wake up in an abandoned hospital. The emergency exit is locked by
+          <b>5 keys</b> scattered across its wards — never in the same place twice.<br />And you are <b>not alone</b>.
+          The eye at the top shows how close it is to noticing you.
+        </p>
+        <p class="hint" id="start-hint">Loading…</p>
+        <div id="loading-bar"><span id="loading-fill"></span></div>
+        <ul class="controls">
+          <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</li>
+          <li><kbd>Shift</kbd> Sprint — drains stamina, very loud</li>
+          <li><kbd>Z</kbd> Walk quietly (hold) — it can hear normal footsteps from 5 m</li>
+          <li><kbd>C</kbd> Crouch (hold) — sneak, and crawl through vents it cannot follow you into</li>
+          <li><kbd>F</kbd> Flashlight — when it is on, it can see you from farther away</li>
+          <li><kbd>Q</kbd> Flash burst — stuns it if it is in your beam (costs battery)</li>
+          <li><kbd>Space</kbd> (mash) Break free when it grabs you</li>
+          <li>
+            <kbd>R</kbd> Sense the nearest key — an arrow shows the way for a few seconds (then the exit, once it is
+            open)
+          </li>
+          <li><kbd>E</kbd> Pick up / hide in a locker — it will not find you unless it saw you get in</li>
+          <li>
+            <kbd>G</kbd> / <kbd>Click</kbd> Throw a bottle or can you picked up — the noise lures it away. Bottles are
+            loud and smash; cans are quieter but you can pick them up again
+          </li>
+          <li>Crouch behind a bed and it cannot see you; shelves block its view</li>
+          <li><kbd>Space</kbd> Jump</li>
+          <li><kbd>Esc</kbd> Pause</li>
+        </ul>
+        <form id="settings" class="settings" onsubmit="return false;">
+          <h2>Settings</h2>
+          <label
+            >Difficulty
+            <select data-setting="difficulty">
+              <option value="easy">Easy — slower, deafer monster; longer battery</option>
+              <option value="normal">Normal</option>
+              <option value="hard">Hard — faster, sharper monster; battery drains fast</option>
+            </select></label
+          >
+          <label
+            >Master volume <input type="range" min="0" max="1" step="0.05" data-setting="masterVolume" /><output
+              data-output="masterVolume"
+            ></output
+          ></label>
+          <label
+            >Ambience <input type="range" min="0" max="1" step="0.05" data-setting="ambienceVolume" /><output
+              data-output="ambienceVolume"
+            ></output
+          ></label>
+          <label
+            >Mouse sensitivity
+            <input type="range" min="0.2" max="3" step="0.05" data-setting="mouseSensitivity" /><output
+              data-output="mouseSensitivity"
+            ></output
+          ></label>
+          <label
+            >Field of view <input type="range" min="60" max="100" step="1" data-setting="fov" /><output
+              data-output="fov"
+            ></output
+          ></label>
+          <label
+            >Brightness <input type="range" min="0.6" max="2" step="0.05" data-setting="brightness" /><output
+              data-output="brightness"
+            ></output
+          ></label>
+          <label class="check">Invert mouse Y <input type="checkbox" data-setting="isYInverted" /></label>
+          <label class="check"
+            >High quality graphics (bloom, sharper image) — turn off if it stutters
+            <input type="checkbox" data-setting="isHighQuality"
+          /></label>
+        </form>
+        <p class="tip">Headphones recommended — its footsteps tell you which way it is coming from.</p>
+        <p class="credits">
+          Monster model: "Smily horror monster" by Bento (sketchfab.com/gostbento) — CC BY 4.0<br />Hand model: "Rigged
+          hand" by Elena FF (sketchfab.com/elenaferfor) — CC BY-SA 4.0
+        </p>
+      </div>
+    </div>
+
+    <div id="endscreen" class="hidden">
+      <div class="panel">
+        <h1 id="end-title"></h1>
+        <p id="end-text"></p>
+        <p class="hint">Click to play again</p>
+        <p class="byline">Way Out — a game by Quách Thiếu Khang</p>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

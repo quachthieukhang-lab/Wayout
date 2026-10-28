@@ -1,0 +1,13 @@
+# Netlify: build the Vite app and serve the static dist/ folder.
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Models are never modified in place, so let browsers cache them.
+[[headers]]
+  for = "/models/*"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"

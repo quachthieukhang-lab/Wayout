@@ -1,0 +1,39 @@
+{
+  "name": "game3d",
+  "private": true,
+  "version": "0.1.0",
+  "author": "Quách Thiếu Khang",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run lint && npm run typecheck && npm run format:check && npm test",
+    "models": "gltf-transform optimize model-originals/hand.glb public/models/hand.glb --compress meshopt --texture-compress webp --texture-size 1024 --simplify false --join false --flatten false --instance false --palette false --resample false && gltf-transform optimize model-originals/monster.glb public/models/monster.glb --compress meshopt --texture-compress webp --texture-size 1024 --simplify false --join false --flatten false --instance false --palette false --resample false"
+  },
+  "dependencies": {
+    "@tweenjs/tween.js": "^25.0.0",
+    "cannon-es": "^0.20.0",
+    "postprocessing": "^6.39.5",
+    "seedrandom": "^3.0.5",
+    "three": "^0.186.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@gltf-transform/cli": "^4.5.1",
+    "@types/three": "^0.186.0",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.10",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.5",
+    "vite-plugin-pwa": "^2.0.0",
+    "vitest": "^5.0.5"
+  }
+}
