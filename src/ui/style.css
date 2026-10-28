@@ -481,3 +481,60 @@ kbd {
   font-size: 13px;
   opacity: 0.85;
 }
+
+/* ---------- pause menu ---------- */
+#pause {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.82);
+}
+
+#pause .panel {
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+
+#pause .menu {
+  display: grid;
+  gap: 10px;
+  width: min(280px, 100%);
+  margin: 18px auto 0;
+}
+
+#pause button {
+  padding: 10px 16px;
+  font: inherit;
+  font-size: 18px;
+  color: var(--text);
+  background: #140b0b;
+  border: 1px solid #3a1010;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+
+#pause button:hover,
+#pause button:focus-visible {
+  background: #2a0d0d;
+  border-color: var(--blood);
+  outline: none;
+}
+
+#pause .back {
+  display: block;
+  margin: 14px auto 0;
+  width: min(280px, 100%);
+}
+
+/* Restarting: only the title, the loading bar and "click to play" */
+#overlay.quick .story,
+#overlay.quick .controls,
+#overlay.quick .settings,
+#overlay.quick .tip {
+  display: none;
+}

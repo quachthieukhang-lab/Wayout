@@ -19,6 +19,7 @@ import { createGraphics } from './render/graphics.js';
 import { createDust } from './world/dust.js';
 
 const MAX_DT = 0.05;
+const RESTART_FLAG = 'way-out-restart'; // sessionStorage: reloading for a new run skips the long title screen
 const DIRECTIONS = [
   [1, 0],
   [-1, 0],
@@ -98,12 +99,17 @@ bindSettingsForm(document.getElementById('settings'), (settings) => {
   graphics.setQuality(settings.isHighQuality);
 });
 
+hud.setQuickStart(takeRestartFlag());
 hud.overlay.addEventListener('click', (event) => {
   if (!isReady || /** @type {Element} */ (event.target).closest('#settings')) return; // adjusting a slider must not start the game
-  audio.start();
-  renderer.domElement.requestPointerLock();
+  lockPointer();
 });
-hud.endscreen.addEventListener('click', () => window.location.reload());
+hud.endscreen.addEventListener('click', () => reload(true));
+hud.onMenuAction((action) => {
+  if (action === 'resume') lockPointer();
+  else if (action === 'restart') reload(true);
+  else if (action === 'exit') reload(false);
+});
 
 document.addEventListener('pointerlockchange', () => {
   if (game.isOver) return;
@@ -134,6 +140,34 @@ renderer.setAnimationLoop((timestamp) => {
   graphics.render(dt);
   devTools?.end();
 });
+
+/** Starts or resumes play. Must run inside a click: browsers only lock the mouse on a user gesture. */
+function lockPointer() {
+  audio.start();
+  // Chrome refuses a re-lock for about a second after Esc; the menu simply stays open and the next click works.
+  Promise.resolve(renderer.domElement.requestPointerLock()).catch(() => {});
+}
+
+/** A new run is a fresh page: new random layout, new monster. @param {boolean} isQuick skip the title screen */
+function reload(isQuick) {
+  try {
+    if (isQuick) sessionStorage.setItem(RESTART_FLAG, '1');
+  } catch {
+    // Storage blocked: the restart still works, it just shows the full title screen.
+  }
+  window.location.reload();
+}
+
+/** @returns {boolean} whether this page load is a restart (the flag is used up) */
+function takeRestartFlag() {
+  try {
+    const isRestart = sessionStorage.getItem(RESTART_FLAG) !== null;
+    sessionStorage.removeItem(RESTART_FLAG);
+    return isRestart;
+  } catch {
+    return false;
+  }
+}
 
 /** Yaw that points the camera down the first open corridor next to `cell` (forward = (-sin, -cos)). */
 function facingOpenCorridor(cell) {

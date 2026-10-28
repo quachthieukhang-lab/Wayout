@@ -19,6 +19,10 @@ export function createHud() {
     startHint: $('start-hint'),
     loadingFill: $('loading-fill'),
     endscreen: $('endscreen'),
+    pause: $('pause'),
+    pauseMenu: $('pause-menu'),
+    pauseSettings: $('pause-settings'),
+    settings: $('settings'),
     endTitle: $('end-title'),
     endText: $('end-text'),
     hud: $('hud'),
@@ -50,6 +54,17 @@ export function createHud() {
     apply(value);
   };
   let toastTimeout = 0;
+  let hasStarted = false; // after the first start, pausing shows the pause menu instead of the title screen
+  // The settings form lives on the title screen; the pause menu borrows it while its Settings view is open.
+  const settingsHome = { parent: el.settings.parentElement, next: el.settings.nextSibling };
+
+  /** @param {boolean} isOpen */
+  const showPauseSettings = (isOpen) => {
+    el.pauseMenu.classList.toggle('hidden', isOpen);
+    el.pauseSettings.classList.toggle('hidden', !isOpen);
+    if (isOpen) el.pauseSettings.prepend(el.settings);
+    else settingsHome.parent.insertBefore(el.settings, settingsHome.next);
+  };
 
   return {
     overlay: el.overlay,
@@ -65,7 +80,28 @@ export function createHud() {
 
     /** @param {boolean} isPaused */
     setPaused(isPaused) {
-      el.overlay.classList.toggle('hidden', !isPaused);
+      if (!isPaused) hasStarted = true;
+      el.overlay.classList.toggle('hidden', !isPaused || hasStarted);
+      el.pause.classList.toggle('hidden', !isPaused || !hasStarted);
+      showPauseSettings(false);
+    },
+
+    /** Restarting: the title screen shrinks to a "click to play" prompt. @param {boolean} isQuick */
+    setQuickStart(isQuick) {
+      el.overlay.classList.toggle('quick', isQuick);
+    },
+
+    /** @param {(action: 'resume' | 'settings' | 'back' | 'restart' | 'exit') => void} handler a pause-menu button was clicked */
+    onMenuAction(handler) {
+      el.pause.addEventListener('click', (event) => {
+        const button = /** @type {HTMLElement | null} */ (
+          /** @type {Element} */ (event.target).closest('[data-action]')
+        );
+        if (!button) return;
+        const action = /** @type {'resume' | 'settings' | 'back' | 'restart' | 'exit'} */ (button.dataset.action);
+        if (action === 'settings' || action === 'back') showPauseSettings(action === 'settings');
+        handler(action);
+      });
     },
 
     /**
@@ -152,6 +188,7 @@ export function createHud() {
       el.endscreen.classList.toggle('win', isWin);
       el.endscreen.classList.remove('hidden');
       el.overlay.classList.add('hidden');
+      el.pause.classList.add('hidden');
       el.hud.classList.add('hidden');
       el.danger.style.opacity = '0';
     },
