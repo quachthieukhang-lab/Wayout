@@ -13,6 +13,9 @@ keys, keep out of its sight, and get out.
   searches where it last saw you.
 - **Hide and sneak.** Crouch behind beds, slip through vents it cannot follow you into, or hide in lockers. It will
   not find you there unless it saw you climb in.
+- **Use the building.** Close doors to break its line of sight (it can force them, slowly and loudly), switch
+  on an old radio to draw it across the map, and watch your step: broken glass and loose floorboards give you away
+  unless you crouch or walk quietly.
 - **Lure it away.** Pick up bottles and cans and throw them. The noise draws it toward where they land. Bottles are
   loud and smash; cans are quieter but you can pick them up again.
 - **Never the same run twice.** The keys and throwables are placed at random each time, and every key is always
@@ -39,7 +42,7 @@ keys, keep out of its sight, and get out.
 | `Space`          | Jump; mash it to break free when grabbed               |
 | `F`              | Flashlight on / off                                    |
 | `Q`              | Flash burst: stuns the monster if it is in your beam   |
-| `E`              | Pick up / hide in a locker / get out                   |
+| `E`              | Pick up / hide in a locker / open, close doors / radio |
 | `G` / left click | Throw a bottle or can                                  |
 | `R`              | Sense the nearest key (then the exit, once it is open) |
 | `Esc`            | Pause menu: Resume, Settings, Restart, Exit to title   |

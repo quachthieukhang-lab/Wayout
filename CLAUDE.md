@@ -29,7 +29,7 @@ Source is grouped by feature under `src/`; `main.js` (the entry `index.html` loa
 
 - `core/` — `game.js` (rules), `tutorial.js` (tutorial steps), `input.js`, `settings.js`, `difficulty.js`
 - `level/` — `level.js` (map, rooms, grid queries), `tutorial-map.js`, `pathfinding.js`, `scatter.js` (random keys/throwables)
-- `world/` — `world.js` (builds the scene), `furniture.js`, `lockers.js`, `rooms.js` (room paint + door signs), `textures.js`, `dust.js`
+- `world/` — `world.js` (builds the scene), `doors.js`, `radios.js`, `furniture.js`, `lockers.js`, `rooms.js` (room paint + door signs), `textures.js`, `dust.js`
 - `player/` — `player.js`, `viewmodel.js`, `flashlight.js`, `hand-model.js`
 - `monster/` — `monster.js` (AI), `monster-model.js`
 - `items/` — `pickups.js`, `throwables.js` (carrying/throwing, cannon-es physics), `key-sense.js`
@@ -63,6 +63,8 @@ Everything else derives from those cells: `world.js` builds wall instances only 
 **Chase music.** `audio.setChase(isChasing)` (called every frame from `Game.update`, and with `false` in `endRun`) fades a synthesized loop in and out: a dissonant low drone pulsing on a 150 bpm beat, a high shivering cluster, and drums scheduled from `audio.update`.
 
 **Hiding the arms.** `ViewModel.setShown` moves the arm/torch meshes to layer 1 (not rendered) instead of `root.visible = false`: hiding the hand light with them changed the light count and recompiled every shader, a hitch on entering a locker or being grabbed. Never toggle `visible` on anything that contains a light.
+
+**Doors, radios, noisy floors** (map tiles `D`, `R`, `G`/`W`). `world/doors.js`: double doors that start open; `setOpen` flips the cell in `level.opaque` (sight) and adds/removes the door's Box3 in `world.colliders` (the player; `Throwing.syncColliders` mirrors it for physics). Door cells stay walkable in the grid, so paths go through them; when the monster's next path cell is a closed door within reach, `Game.updateMonsterAtDoors` makes it `hold` while it forces the door open (slow swing, loud creak). `world/radios.js`: switched on with E, a radio plays for `PLAY_TIME` and pulses `monster.hearNoise(position, RADIO_NOISE)` every 2 s, then rests. `noisyFloorAt` (level.js): a careless step on glass/boards calls `hearNoise` from the player's position; crouching or walking quietly only makes a soft sound. `Game.findInteraction` picks what E does: pickup, locker, door, radio. `test/interactables.test.js` covers them.
 
 **Game states** (`GameState` in game.js): PLAYING → GRABBED (mash Space to break free) → DYING (jumpscare close-up) → DEAD, or WON at the exit. Hiding in a locker is a sub-mode of PLAYING (`game.hidingSpot`): `player.update` is skipped and only the camera/look runs.
 
