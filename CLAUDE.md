@@ -72,7 +72,9 @@ Everything else derives from those cells: `world.js` builds wall instances only 
 
 **Settings** (`settings.js`) are bound to `#settings` form inputs and selects via `data-setting` attributes, validated with zod (each bad field falls back to its default on its own) and persisted in `localStorage` (`way-out-settings`).
 
-**Difficulty** (`difficulty.js`: Easy / Normal / Hard) is a setting. Each preset scales Normal's tunables: monster speeds (`speedScale`) and hearing (`hearingScale`), flashlight drain (`drainScale`) and key-sense cooldown (`cooldownScale`). `Game.setDifficulty` applies it at once, even mid-run.
+The settings form is a list of sections (Gameplay, Audio, Controls, Display; `.settings-menu` buttons) that each open their own page (`fieldset[data-section]`, back button `.settings-back`), wired by `bindSettingsMenu`; the pause menu resets it to the list.
+
+**Difficulty** (`difficulty.js`: Easy / Normal / Hard) is a setting, and the title screen asks for it before every normal run (`#difficulty-picker`; the pick is written through the settings form select, so storage and game follow). The tutorial skips the picker. Each preset scales Normal's tunables: monster speeds (`speedScale`) and hearing (`hearingScale`), flashlight drain (`drainScale`) and key-sense cooldown (`cooldownScale`). `Game.setDifficulty` applies it at once, even mid-run.
 
 ## Deploy
 

@@ -12,7 +12,7 @@ import { createPickups } from './items/pickups.js';
 import { HorrorAudio } from './audio/audio.js';
 import { createHud } from './ui/hud.js';
 import { Game } from './core/game.js';
-import { bindSettingsForm } from './core/settings.js';
+import { bindSettingsForm, bindSettingsMenu } from './core/settings.js';
 import { DIFFICULTIES } from './core/difficulty.js';
 import { scatterItems } from './level/scatter.js';
 import { TUTORIAL_MAP, TUTORIAL_ROOMS } from './level/tutorial-map.js';
@@ -115,6 +115,8 @@ Promise.all([handLoaded, monsterLoaded])
     hud.setLoading(null);
   });
 
+const settingsMenu = bindSettingsMenu(document.getElementById('settings'));
+const difficultySelect = /** @type {HTMLSelectElement} */ (document.querySelector('[data-setting="difficulty"]'));
 bindSettingsForm(document.getElementById('settings'), (settings) => {
   game.setDifficulty(DIFFICULTIES[settings.difficulty]);
   audio.setVolumes(settings.masterVolume, settings.ambienceVolume);
@@ -130,12 +132,24 @@ hud.setTutorial(isTutorial);
 hud.overlay.addEventListener('click', (event) => {
   const target = /** @type {Element} */ (event.target);
   if (!isReady || target.closest('#settings')) return; // adjusting a slider must not start the game
-  if (target.closest('#tutorial-button')) reload('tutorial');
-  else lockPointer();
+  if (target.closest('#tutorial-button')) {
+    reload('tutorial');
+    return;
+  }
+  const choice = /** @type {HTMLElement | null} */ (target.closest('[data-difficulty]'));
+  if (choice) {
+    chooseDifficulty(choice.dataset.difficulty);
+    lockPointer();
+  } else if (isTutorial) {
+    lockPointer(); // the tutorial always plays on Easy
+  } else if (!hud.isPickingDifficulty) {
+    hud.showDifficultyPicker(difficultySelect.value);
+  }
 });
 hud.endscreen.addEventListener('click', () => reload('restart')); // after the tutorial, too: on to the real game
 hud.onMenuAction((action) => {
   if (action === 'resume') lockPointer();
+  else if (action === 'settings') settingsMenu.showList();
   else if (action === 'restart') reload(isTutorial ? 'tutorial' : 'restart');
   else if (action === 'skip') reload('restart');
   else if (action === 'exit') reload(null);
@@ -172,6 +186,12 @@ renderer.setAnimationLoop((timestamp) => {
   graphics.render(dt);
   devTools?.end();
 });
+
+/** Saves the picked difficulty through the settings form, so the form, storage and game all follow. @param {string} name */
+function chooseDifficulty(name) {
+  difficultySelect.value = name;
+  difficultySelect.dispatchEvent(new Event('input'));
+}
 
 /** Starts or resumes play. Must run inside a click: browsers only lock the mouse on a user gesture. */
 function lockPointer() {

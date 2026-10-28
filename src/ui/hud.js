@@ -23,6 +23,7 @@ export function createHud() {
     pauseMenu: $('pause-menu'),
     pauseSettings: $('pause-settings'),
     settings: $('settings'),
+    difficultyPicker: $('difficulty-picker'),
     resumeRetry: $('resume-retry'),
     skipTutorial: $('skip-tutorial'),
     tutorialButton: $('tutorial-button'),
@@ -101,6 +102,19 @@ export function createHud() {
     /** The browser refused to capture the mouse (Chrome and Edge do for about a second after Esc). */
     showResumeRetry() {
       el.resumeRetry.classList.remove('hidden');
+    },
+
+    /** Asks which difficulty to play before the run starts. @param {string} current the saved choice, highlighted */
+    showDifficultyPicker(current) {
+      el.difficultyPicker.classList.remove('hidden');
+      el.startHint.classList.add('hidden');
+      el.difficultyPicker.querySelectorAll('[data-difficulty]').forEach((button) => {
+        button.classList.toggle('selected', /** @type {HTMLElement} */ (button).dataset.difficulty === current);
+      });
+    },
+
+    get isPickingDifficulty() {
+      return !el.difficultyPicker.classList.contains('hidden');
     },
 
     /** Restarting: the title screen shrinks to a "click to play" prompt. @param {boolean} isQuick */

@@ -77,6 +77,33 @@ function readInput(input) {
 }
 
 /**
+ * Settings are grouped: a list of sections (`.settings-menu` buttons with `data-section`), each opening its own
+ * page (`fieldset[data-section]`) with a back button (`.settings-back`).
+ * @param {HTMLElement} form
+ * @returns {{ showList: () => void }} back to the list of sections
+ */
+export function bindSettingsMenu(form) {
+  const menu = /** @type {HTMLElement} */ (form.querySelector('.settings-menu'));
+  const back = /** @type {HTMLElement} */ (form.querySelector('.settings-back'));
+  /** @type {HTMLElement[]} */
+  const sections = [...form.querySelectorAll('fieldset[data-section]')].map((s) => /** @type {HTMLElement} */ (s));
+
+  /** @param {string | null} name null shows the list */
+  const show = (name) => {
+    menu.classList.toggle('hidden', name !== null);
+    back.classList.toggle('hidden', name === null);
+    sections.forEach((section) => section.classList.toggle('hidden', section.dataset.section !== name));
+  };
+  menu.addEventListener('click', (event) => {
+    const button = /** @type {HTMLElement | null} */ (/** @type {Element} */ (event.target).closest('[data-section]'));
+    if (button) show(button.dataset.section);
+  });
+  back.addEventListener('click', () => show(null));
+  show(null);
+  return { showList: () => show(null) };
+}
+
+/**
  * Wires inputs and selects marked `data-setting="<key>"` (with optional `data-output="<key>"` labels),
  * persists every change, and reports the full settings object (once immediately, then on each change).
  * @param {HTMLElement} form

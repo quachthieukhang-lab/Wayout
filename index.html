@@ -72,6 +72,18 @@
         </p>
         <p class="hint" id="start-hint">Loading…</p>
         <div id="loading-bar"><span id="loading-fill"></span></div>
+        <div id="difficulty-picker" class="difficulty-picker hidden">
+          <p class="picker-title">Choose your difficulty</p>
+          <button type="button" data-difficulty="easy">
+            <b>Easy</b><span>Slower, deafer monster. The battery lasts longer.</span>
+          </button>
+          <button type="button" data-difficulty="normal">
+            <b>Normal</b><span>The way it is meant to be played.</span>
+          </button>
+          <button type="button" data-difficulty="hard">
+            <b>Hard</b><span>Faster, sharper monster. The battery drains fast.</span>
+          </button>
+        </div>
         <button type="button" id="tutorial-button" class="tutorial-button">New here? Play the tutorial</button>
         <ul class="controls">
           <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</li>
@@ -96,45 +108,66 @@
         </ul>
         <form id="settings" class="settings" onsubmit="return false;">
           <h2>Settings</h2>
-          <label
-            >Difficulty
-            <select data-setting="difficulty">
-              <option value="easy">Easy — slower, deafer monster; longer battery</option>
-              <option value="normal">Normal</option>
-              <option value="hard">Hard — faster, sharper monster; battery drains fast</option>
-            </select></label
-          >
-          <label
-            >Master volume <input type="range" min="0" max="1" step="0.05" data-setting="masterVolume" /><output
-              data-output="masterVolume"
-            ></output
-          ></label>
-          <label
-            >Ambience <input type="range" min="0" max="1" step="0.05" data-setting="ambienceVolume" /><output
-              data-output="ambienceVolume"
-            ></output
-          ></label>
-          <label
-            >Mouse sensitivity
-            <input type="range" min="0.2" max="3" step="0.05" data-setting="mouseSensitivity" /><output
-              data-output="mouseSensitivity"
-            ></output
-          ></label>
-          <label
-            >Field of view <input type="range" min="60" max="100" step="1" data-setting="fov" /><output
-              data-output="fov"
-            ></output
-          ></label>
-          <label
-            >Brightness <input type="range" min="0.6" max="2" step="0.05" data-setting="brightness" /><output
-              data-output="brightness"
-            ></output
-          ></label>
-          <label class="check">Invert mouse Y <input type="checkbox" data-setting="isYInverted" /></label>
-          <label class="check"
-            >High quality graphics (bloom, sharper image) — turn off if it stutters
-            <input type="checkbox" data-setting="isHighQuality"
-          /></label>
+          <nav class="settings-menu" aria-label="Settings sections">
+            <button type="button" data-section="gameplay">Gameplay <span>Difficulty</span></button>
+            <button type="button" data-section="audio">Audio <span>Master volume, ambience</span></button>
+            <button type="button" data-section="controls">Controls <span>Mouse sensitivity, invert Y</span></button>
+            <button type="button" data-section="display">
+              Display <span>Field of view, brightness, quality</span>
+            </button>
+          </nav>
+          <fieldset class="settings-section hidden" data-section="gameplay">
+            <legend>Gameplay</legend>
+            <label
+              >Difficulty
+              <select data-setting="difficulty">
+                <option value="easy">Easy — slower, deafer monster; longer battery</option>
+                <option value="normal">Normal</option>
+                <option value="hard">Hard — faster, sharper monster; battery drains fast</option>
+              </select></label
+            >
+          </fieldset>
+          <fieldset class="settings-section hidden" data-section="audio">
+            <legend>Audio</legend>
+            <label
+              >Master volume <input type="range" min="0" max="1" step="0.05" data-setting="masterVolume" /><output
+                data-output="masterVolume"
+              ></output
+            ></label>
+            <label
+              >Ambience <input type="range" min="0" max="1" step="0.05" data-setting="ambienceVolume" /><output
+                data-output="ambienceVolume"
+              ></output
+            ></label>
+          </fieldset>
+          <fieldset class="settings-section hidden" data-section="controls">
+            <legend>Controls</legend>
+            <label
+              >Mouse sensitivity
+              <input type="range" min="0.2" max="3" step="0.05" data-setting="mouseSensitivity" /><output
+                data-output="mouseSensitivity"
+              ></output
+            ></label>
+            <label class="check">Invert mouse Y <input type="checkbox" data-setting="isYInverted" /></label>
+          </fieldset>
+          <fieldset class="settings-section hidden" data-section="display">
+            <legend>Display</legend>
+            <label
+              >Field of view <input type="range" min="60" max="100" step="1" data-setting="fov" /><output
+                data-output="fov"
+              ></output
+            ></label>
+            <label
+              >Brightness <input type="range" min="0.6" max="2" step="0.05" data-setting="brightness" /><output
+                data-output="brightness"
+              ></output
+            ></label>
+            <label class="check"
+              >High quality graphics (bloom, sharper image) — turn off if it stutters
+              <input type="checkbox" data-setting="isHighQuality"
+            /></label>
+          </fieldset>
+          <button type="button" class="settings-back hidden">‹ All settings</button>
         </form>
         <p class="touch-note">Way Out needs a keyboard and a mouse.</p>
         <p class="tip">Headphones recommended — its footsteps tell you which way it is coming from.</p>
