@@ -7,6 +7,7 @@ const LENS_COLOR = new THREE.Color(0xfff3d6);
 const HAND_LIGHT_INTENSITY = 0.6;
 const HAND_LIGHT_RANGE = 0.8; // reaches the hand and torch, not the walls
 const LENS_GLOW = 10; // lens brightness when on, high enough to pass the bloom threshold
+const HIDDEN_LAYER = 1; // the camera renders layer 0 only
 const HAND_MODEL_OFFSET = new THREE.Vector3(0.03, -0.01, -0.31); // wrist position on the forearm; tweak to fit the grip
 
 /** First-person arms attached to the camera; the right hand holds the flashlight. Walk bob and mouse sway. */
@@ -60,6 +61,18 @@ export class ViewModel {
     this.leftArm.visible = false;
     model.position.copy(HAND_MODEL_OFFSET);
     this.rightArm.add(model);
+  }
+
+  /**
+   * Shows or hides the arms and torch by moving their meshes to a layer the camera does not render. Setting
+   * `root.visible = false` also hid the hand light: the light count changed and every shader recompiled (a hitch
+   * each time the player climbed into a locker or got grabbed).
+   * @param {boolean} isShown
+   */
+  setShown(isShown) {
+    this.root.traverse((object) => {
+      if (object instanceof THREE.Mesh) object.layers.set(isShown ? 0 : HIDDEN_LAYER);
+    });
   }
 
   /** @param {number} brightness 0..1 */

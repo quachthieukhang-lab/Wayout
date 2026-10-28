@@ -97,6 +97,8 @@ export class Monster {
     this.awareness = 0; // 0..1, reaching 1 starts a chase
     this.lastKnown = new THREE.Vector3();
     this.rage = 0;
+    this.isDormant = false; // asleep out of sight until the tutorial wakes it
+    this.patrolCells = level.monsterCells; // where it may wander; the tutorial pens it in
     this.speedScale = 1; // difficulty
     this.hearingScale = 1;
     this.yaw = 0;
@@ -128,6 +130,38 @@ export class Monster {
     this.hearingScale = difficulty.hearing;
   }
 
+  /** Asleep: it does nothing and its model is hidden. @param {boolean} isDormant */
+  setDormant(isDormant) {
+    this.isDormant = isDormant;
+    this.body.visible = !isDormant;
+  }
+
+  /** Moves it to a cell and calms it down. @param {import('../level/level.js').Cell} cell */
+  place(cell) {
+    const { x, z } = cellToWorld(cell);
+    this.position.set(x, 0, z);
+    this.calm();
+  }
+
+  /** Back to an unaware patrol. */
+  calm() {
+    this.state = MonsterState.PATROL;
+    this.awareness = 0;
+    this.reactTimer = 0;
+    this.path = [];
+  }
+
+  /**
+   * Keeps its patrol inside a cell rectangle, or lets it roam the whole level again.
+   * @param {{ x0: number, z0: number, x1: number, z1: number } | null} area
+   */
+  setPatrolArea(area) {
+    const cells = area
+      ? this.level.monsterCells.filter((c) => c.x >= area.x0 && c.x <= area.x1 && c.z >= area.z0 && c.z <= area.z1)
+      : [];
+    this.patrolCells = cells.length > 0 ? cells : this.level.monsterCells;
+  }
+
   /**
    * A noise somewhere else, e.g. a thrown bottle smashing. If it carries this far it goes to look; mid-chase it
    * takes the bait only once it has lost sight of the player.
@@ -150,9 +184,14 @@ export class Monster {
     return true;
   }
 
-  /** Makes the monster rush to a position, e.g. after a loud noise. @param {THREE.Vector3} position */
-  alert(position) {
+  /**
+   * Makes the monster rush to a position, e.g. after a loud noise.
+   * @param {THREE.Vector3} position
+   * @param {number} [reactionTime] seconds it roars in place before charging
+   */
+  alert(position, reactionTime = 0) {
     this.state = MonsterState.CHASE;
+    this.reactTimer = reactionTime;
     this.isPerceiving = true; // until its next update says otherwise, so a stray noise cannot pull it away this frame
     this.lastKnown.copy(position);
     this.path = [];
@@ -186,6 +225,11 @@ export class Monster {
    * @returns {MonsterEvent}
    */
   update(dt, target) {
+    if (this.isDormant) {
+      this.speed = 0;
+      this.eyeLight.intensity = 0;
+      return null;
+    }
     if (this.state === MonsterState.STUNNED) {
       this.updateStun(dt);
       this.updateEyes(dt);
@@ -338,10 +382,11 @@ export class Monster {
 
   patrol(dt, target) {
     if (!this.followPath(PATROL_SPEED * this.speedScale, dt)) return;
+    const isRoaming = this.patrolCells === this.level.monsterCells; // a penned-in monster does not drift toward you
     const goal =
-      this.rng() < HUNT_CHANCE
+      isRoaming && this.rng() < HUNT_CHANCE
         ? this.randomCellNear(worldToCell(target.position.x, target.position.z), HUNT_RADIUS)
-        : this.level.monsterCells[Math.floor(this.rng() * this.level.monsterCells.length)];
+        : this.patrolCells[Math.floor(this.rng() * this.patrolCells.length)];
     this.path = this.pathTo(goal);
   }
 

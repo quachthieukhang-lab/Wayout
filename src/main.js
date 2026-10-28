@@ -15,11 +15,15 @@ import { Game } from './core/game.js';
 import { bindSettingsForm } from './core/settings.js';
 import { DIFFICULTIES } from './core/difficulty.js';
 import { scatterItems } from './level/scatter.js';
+import { TUTORIAL_MAP, TUTORIAL_ROOMS } from './level/tutorial-map.js';
+import { Tutorial } from './core/tutorial.js';
 import { createGraphics } from './render/graphics.js';
 import { createDust } from './world/dust.js';
 
 const MAX_DT = 0.05;
-const RESTART_FLAG = 'way-out-restart'; // sessionStorage: reloading for a new run skips the long title screen
+// sessionStorage: how the next page load starts. 'restart' = a new run with a compact title screen,
+// 'tutorial' = the tutorial. Absent = the full title screen.
+const LAUNCH_KEY = 'way-out-launch';
 const DIRECTIONS = [
   [1, 0],
   [-1, 0],
@@ -32,8 +36,11 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap; // tone mapping is done by the effect chain in graphics.js
 document.getElementById('app').appendChild(renderer.domElement);
 
-const level = scatterItems(parseLevel(LEVEL_MAP)); // keys and throwables land somewhere new every run
-const world = createWorld(level, ROOMS);
+const launch = takeLaunch();
+const isTutorial = launch === 'tutorial';
+// Keys and throwables land somewhere new every run; the tutorial is always laid out the same.
+const level = isTutorial ? parseLevel(TUTORIAL_MAP) : scatterItems(parseLevel(LEVEL_MAP));
+const world = createWorld(level, isTutorial ? TUTORIAL_ROOMS : ROOMS);
 const { scene } = world;
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 80);
@@ -47,6 +54,7 @@ player.yaw = facingOpenCorridor(level.spawn);
 const viewModel = new ViewModel(camera);
 const flashlight = new Flashlight();
 flashlight.attachTo(camera);
+if (isTutorial) flashlight.toggle(); // starts off: a tutorial step teaches F
 const handLoaded = loadHandModel()
   .then((model) => model && viewModel.setHandModel(model))
   .catch((error) => console.warn('Could not load the hand model, keeping the box hands.', error));
@@ -71,7 +79,21 @@ if (import.meta.env.DEV) {
 const pickups = createPickups(scene, level);
 const audio = new HorrorAudio(camera, scene);
 const hud = createHud();
-const game = new Game({ level, camera, input, player, viewModel, flashlight, monster, pickups, world, audio, hud });
+const tutorial = isTutorial ? new Tutorial() : null;
+const game = new Game({
+  level,
+  camera,
+  input,
+  player,
+  viewModel,
+  flashlight,
+  monster,
+  pickups,
+  world,
+  audio,
+  hud,
+  tutorial,
+});
 
 // The start screen waits for both models, then compiles every shader, so nothing hitches the first time it appears.
 const LOADING_STEPS = 3; // hand, monster, shaders
@@ -99,16 +121,20 @@ bindSettingsForm(document.getElementById('settings'), (settings) => {
   graphics.setQuality(settings.isHighQuality);
 });
 
-hud.setQuickStart(takeRestartFlag());
+hud.setQuickStart(launch !== null);
+hud.setTutorial(isTutorial);
 hud.overlay.addEventListener('click', (event) => {
-  if (!isReady || /** @type {Element} */ (event.target).closest('#settings')) return; // adjusting a slider must not start the game
-  lockPointer();
+  const target = /** @type {Element} */ (event.target);
+  if (!isReady || target.closest('#settings')) return; // adjusting a slider must not start the game
+  if (target.closest('#tutorial-button')) reload('tutorial');
+  else lockPointer();
 });
-hud.endscreen.addEventListener('click', () => reload(true));
+hud.endscreen.addEventListener('click', () => reload('restart')); // after the tutorial, too: on to the real game
 hud.onMenuAction((action) => {
   if (action === 'resume') lockPointer();
-  else if (action === 'restart') reload(true);
-  else if (action === 'exit') reload(false);
+  else if (action === 'restart') reload(isTutorial ? 'tutorial' : 'restart');
+  else if (action === 'skip') reload('restart');
+  else if (action === 'exit') reload(null);
 });
 
 document.addEventListener('pointerlockchange', () => {
@@ -148,24 +174,27 @@ function lockPointer() {
   Promise.resolve(renderer.domElement.requestPointerLock()).catch(() => {});
 }
 
-/** A new run is a fresh page: new random layout, new monster. @param {boolean} isQuick skip the title screen */
-function reload(isQuick) {
+/**
+ * A new run is a fresh page: new random layout, new monster.
+ * @param {'restart' | 'tutorial' | null} next what the next load starts; null = the full title screen
+ */
+function reload(next) {
   try {
-    if (isQuick) sessionStorage.setItem(RESTART_FLAG, '1');
+    if (next) sessionStorage.setItem(LAUNCH_KEY, next);
   } catch {
-    // Storage blocked: the restart still works, it just shows the full title screen.
+    // Storage blocked: the page still reloads, just to the full title screen.
   }
   window.location.reload();
 }
 
-/** @returns {boolean} whether this page load is a restart (the flag is used up) */
-function takeRestartFlag() {
+/** @returns {'restart' | 'tutorial' | null} how this page load was asked to start (the request is used up) */
+function takeLaunch() {
   try {
-    const isRestart = sessionStorage.getItem(RESTART_FLAG) !== null;
-    sessionStorage.removeItem(RESTART_FLAG);
-    return isRestart;
+    const launch = sessionStorage.getItem(LAUNCH_KEY);
+    sessionStorage.removeItem(LAUNCH_KEY);
+    return launch === 'restart' || launch === 'tutorial' ? launch : null;
   } catch {
-    return false;
+    return null;
   }
 }
 

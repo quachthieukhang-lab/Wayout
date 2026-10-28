@@ -158,7 +158,8 @@ export function createLockerDoorTexture(rng) {
         ctx.lineTo(x + (rng() - 0.5) * 30, y + (rng() - 0.5) * 30);
         ctx.stroke();
       }
-      for (let i = 0; i < 6; i++) ctx.clearRect(w * 0.18, h * (0.12 + i * 0.035), w * 0.64, h * 0.015);
+      // Five slits from 1.40 m to 1.87 m on the 2.06 m door: the eye inside is at 1.68 m.
+      for (let i = 0; i < 5; i++) ctx.clearRect(w * 0.16, h * (0.1 + i * 0.05), w * 0.68, h * 0.028);
       ctx.fillStyle = '#9a9a92';
       ctx.fillRect(w * 0.78, h * 0.48, w * 0.08, h * 0.08); // handle
     },

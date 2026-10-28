@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Easing } from '@tweenjs/tween.js';
-import { worldToCell, exitApproach } from '../level/level.js';
+import { worldToCell, cellToWorld, exitApproach } from '../level/level.js';
 import { KeySense } from '../items/key-sense.js';
 import { hasLineOfSight } from '../level/pathfinding.js';
 import { MonsterState } from '../monster/monster.js';
@@ -77,7 +77,8 @@ export class Game {
    *   player: import('../player/player.js').Player, viewModel: import('../player/viewmodel.js').ViewModel,
    *   flashlight: import('../player/flashlight.js').Flashlight, monster: import('../monster/monster.js').Monster,
    *   pickups: ReturnType<typeof import('../items/pickups.js').createPickups>, world: ReturnType<typeof import('../world/world.js').createWorld>,
-   *   audio: import('../audio/audio.js').HorrorAudio, hud: ReturnType<typeof import('../ui/hud.js').createHud>
+   *   audio: import('../audio/audio.js').HorrorAudio, hud: ReturnType<typeof import('../ui/hud.js').createHud>,
+   *   tutorial?: import('./tutorial.js').Tutorial | null
    * }} deps
    */
   constructor(deps) {
@@ -113,6 +114,8 @@ export class Game {
     this.hasShownThrowTip = false;
     /** @type {import('./difficulty.js').Difficulty} */
     this.difficulty = DIFFICULTIES.normal;
+    this.tutorial = deps.tutorial ?? null;
+    this.director = this.createMonsterDirector();
 
     this._cameraBase = new THREE.Vector3();
     this._forward = { x: 0, z: -1 };
@@ -126,10 +129,11 @@ export class Game {
 
   /** Applies a difficulty right away, even mid-run. @param {import('./difficulty.js').Difficulty} difficulty */
   setDifficulty(difficulty) {
-    this.difficulty = difficulty;
-    this.monster.setDifficulty(difficulty);
-    this.flashlight.drainScale = difficulty.batteryDrain;
-    this.keySense.cooldownScale = difficulty.senseCooldown;
+    const applied = this.tutorial ? DIFFICULTIES.easy : difficulty; // the tutorial is always gentle
+    this.difficulty = applied;
+    this.monster.setDifficulty(applied);
+    this.flashlight.drainScale = applied.batteryDrain;
+    this.keySense.cooldownScale = applied.senseCooldown;
   }
 
   /** @param {boolean} isPaused */
@@ -139,7 +143,7 @@ export class Game {
     this.player.enabled = !isPaused && this.state === GameState.PLAYING;
     this.hud.setPaused(isPaused);
     this.audio.setPaused(isPaused);
-    if (!isPaused && !this.hasShownSenseTip) {
+    if (!isPaused && !this.hasShownSenseTip && !this.tutorial) {
       this.hasShownSenseTip = true;
       this.hud.toast('Lost? Press R to sense the nearest key');
     }
@@ -177,7 +181,9 @@ export class Game {
     this.updateThrown(dt);
     this.updateKeySense(dt);
     this.updateMonster(dt);
+    this.audio.setChase(this.monster.state === MonsterState.CHASE);
     if (this.state !== GameState.PLAYING) return;
+    this.updateTutorial();
 
     this.checkEscape();
     this.updateFootsteps();
@@ -212,6 +218,7 @@ export class Game {
 
   /** 0..1: how close and how angry the monster is. */
   get danger() {
+    if (this.monster.isDormant) return 0;
     const proximity = THREE.MathUtils.clamp(1 - this.monster.distanceTo(this.player.position) / DANGER_RANGE, 0, 1);
     if (this.monster.state === MonsterState.CHASE) return Math.max(proximity, CHASE_MIN_DANGER);
     if (this.monster.state === MonsterState.STUNNED) return proximity * 0.4;
@@ -229,6 +236,7 @@ export class Game {
     this.audio.flash();
     if (!this.isMonsterInBeam()) return;
     this.monster.stun(FLASH_STUN);
+    this.tutorial?.note('stunned');
     this.audio.growl(this.monster.position);
     this.hud.toast('It recoils from the light!');
   }
@@ -304,6 +312,73 @@ export class Game {
     this.hud.toast('The exit is open! RUN!');
   }
 
+  // ---------- tutorial: one objective at a time; caught = back to the step's checkpoint ----------
+
+  updateTutorial() {
+    if (!this.tutorial?.update(this.tutorialSnapshot())) return;
+    const step = this.tutorial.step;
+    step.setup(this.director, false);
+    if (step.tip) this.hud.toast(step.tip);
+    this.hud.setObjective({ step: `${this.tutorial.index + 1}/${this.tutorial.steps.length}`, text: step.text });
+  }
+
+  /** @returns {import('./tutorial.js').TutorialSnapshot} */
+  tutorialSnapshot() {
+    return {
+      cell: worldToCell(this.player.position.x, this.player.position.z),
+      keysFound: this.keysFound,
+      batteriesTaken: this.pickups.items.filter((item) => item.type === PickupType.BATTERY && item.isTaken).length,
+      isHidden: this.hidingSpot !== null,
+      monsterState: this.monster.state,
+    };
+  }
+
+  /** Caught in the tutorial: no death, just back to the start of the step, which stages the monster again. */
+  retryStep() {
+    const step = this.tutorial.step;
+    if (!step) return;
+    if (this.hidingSpot) this.leaveHiding();
+    const { x, z } = cellToWorld(step.checkpoint);
+    this.player.position.set(x, 0, z);
+    this.player.velocity.set(0, 0, 0);
+    this.health = MAX_HEALTH;
+    this.graceTimer = BREAK_FREE_GRACE;
+    step.setup(this.director, true);
+    this.audio.growl();
+    this.hud.flash();
+    this.hud.toast('It caught you. Try again from here.');
+  }
+
+  /** @returns {import('./tutorial.js').MonsterDirector} how tutorial steps stage the monster */
+  createMonsterDirector() {
+    const monster = this.monster;
+    const wake = () => monster.setDormant(false);
+    return {
+      sleep: () => monster.setDormant(true),
+      place: (cell) => {
+        wake();
+        monster.place(cell);
+      },
+      investigate: (cell, area) => {
+        wake();
+        monster.setPatrolArea(area);
+        const { x, z } = cellToWorld(cell);
+        monster.investigate(new THREE.Vector3(x, 0, z));
+      },
+      guard: (area) => {
+        wake();
+        monster.setPatrolArea(area);
+        monster.calm();
+      },
+      charge: (roarSeconds) => {
+        wake();
+        monster.setPatrolArea(null);
+        monster.alert(this.player.position, roarSeconds);
+        this.audio.growl(monster.position);
+      },
+    };
+  }
+
   // ---------- throwing: a bottle or can lands with a noise that draws it away ----------
 
   handleThrowInput() {
@@ -371,6 +446,10 @@ export class Game {
     });
     if (event === 'caught') {
       if (this.graceTimer > 0) return;
+      if (this.tutorial) {
+        this.retryStep();
+        return;
+      }
       if (this.hidingSpot) {
         this.leaveHiding();
         this.hud.toast('It saw you hide!');
@@ -438,7 +517,7 @@ export class Game {
 
     this.wasLightOn = this.flashlight.isOn;
     if (this.flashlight.isOn) this.flashlight.toggle();
-    this.viewModel.root.visible = false;
+    this.viewModel.setShown(false);
     this.audio.lockerDoor();
   }
 
@@ -446,7 +525,7 @@ export class Game {
     this.player.position.copy(this.hidingSpot.front);
     this.hidingSpot = null;
     if (this.wasLightOn && !this.flashlight.isOn) this.flashlight.toggle();
-    this.viewModel.root.visible = true;
+    this.viewModel.setShown(true);
     this.audio.lockerDoor();
   }
 
@@ -502,7 +581,7 @@ export class Game {
     this.player.stamina = PLAYER_CONFIG.MAX_STAMINA; // adrenaline
     this.player.isExhausted = false;
     this.player.enabled = !this.isPaused;
-    this.viewModel.root.visible = true;
+    this.viewModel.setShown(true);
     this.camera.fov = this._startFov;
     this.camera.updateProjectionMatrix();
     this.hud.toast('You broke free! RUN!');
@@ -529,7 +608,7 @@ export class Game {
     this._faceHeight = box.max.y - (box.max.y - box.min.y) * FACE_FROM_TOP;
     this._cameraBase.copy(this.camera.position);
     this._startFov = this.camera.fov;
-    this.viewModel.root.visible = false; // arms and flashlight would block the face
+    this.viewModel.setShown(false); // arms and flashlight would block the face
   }
 
   /** Lunge + zoom: the monster closes in, the lens narrows and rises to its face, the view shakes. */
@@ -560,6 +639,13 @@ export class Game {
 
     this.state = GameState.WON;
     this.endRun();
+    if (this.tutorial) {
+      this.hud.showEnd(true, 'You know how to survive it now. The real hospital is waiting...', {
+        title: 'TUTORIAL COMPLETE',
+        hint: 'Click to play the real game',
+      });
+      return;
+    }
     this.hud.showEnd(
       true,
       `You made it out on ${this.difficulty.label}. It is still standing in the dark, waiting for the next one...`,
@@ -592,6 +678,7 @@ export class Game {
   /** Stops input and releases the mouse once the run is decided. */
   endRun() {
     this.player.enabled = false;
+    this.audio.setChase(false);
     this.hud.setPrompt('');
     document.exitPointerLock();
   }

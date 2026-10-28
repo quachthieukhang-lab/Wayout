@@ -19,6 +19,12 @@ const EMITTERS = Object.freeze({
 const IMPACT_EMITTER = Object.freeze({ refDistance: 4, rolloffFactor: 1 }); // a thrown bottle or can landing
 const IMPACT_VOICES = 3; // impacts overlap (shards still tinkling as a can bounces): each gets its own emitter
 const GLASS_TINKLES = 6;
+// Chase music: a dissonant low drone pulsing on the beat, a shivering high cluster, and drums.
+const CHASE_VOLUME = 0.22;
+const CHASE_FADE_IN = 0.6; // s
+const CHASE_FADE_OUT = 3;
+const CHASE_BEAT = 0.4; // s between drum hits (150 bpm)
+const CHASE_ACCENT_EVERY = 4;
 
 /** @typedef {{ x: number, z: number }} Point */
 
@@ -63,6 +69,7 @@ export class HorrorAudio {
     this.noiseBuffer = createNoiseBuffer(this.ctx);
     this.distortionCurve = createDistortionCurve(DISTORTION_AMOUNT);
     this.startAmbience();
+    this.startChaseMusic();
   }
 
   /** @param {number} master 0..1 overall volume @param {number} ambience 0..1 background drone and wind */
@@ -89,11 +96,34 @@ export class HorrorAudio {
       this.heartbeat(danger);
       this.heartTimer = 1.2 - danger * 0.8;
     }
+    if (this.isChasing) this.updateChaseDrums(dt);
     this.ambientTimer -= dt;
     if (this.ambientTimer <= 0) {
       this.distantSound();
       this.ambientTimer = 12 + Math.random() * 20;
     }
+  }
+
+  /** Fades the chase music in while it hunts the player, and out once it gives up. @param {boolean} isChasing */
+  setChase(isChasing) {
+    if (!this.ctx || isChasing === this.isChasing) return;
+    this.isChasing = isChasing;
+    this.chaseBeatTimer = 0;
+    const gain = this.chaseBus.gain;
+    const now = this.ctx.currentTime;
+    gain.cancelScheduledValues(now);
+    gain.setValueAtTime(gain.value, now);
+    gain.linearRampToValueAtTime(isChasing ? CHASE_VOLUME : 0, now + (isChasing ? CHASE_FADE_IN : CHASE_FADE_OUT));
+  }
+
+  updateChaseDrums(dt) {
+    this.chaseBeatTimer -= dt;
+    if (this.chaseBeatTimer > 0) return;
+    this.chaseBeatTimer += CHASE_BEAT;
+    this.chaseBeat = (this.chaseBeat + 1) % CHASE_ACCENT_EVERY;
+    const isAccent = this.chaseBeat === 0;
+    this.tone({ type: 'triangle', freq: 95, freqEnd: 45, duration: 0.28, volume: isAccent ? 0.45 : 0.28 });
+    if (isAccent) this.tone({ type: 'sawtooth', freq: 233, duration: 0.18, volume: 0.07, filterFreq: 1400 });
   }
 
   // Thumps use triangle waves around 80-130 Hz: pure sub-bass sines are inaudible on laptop speakers.
@@ -288,6 +318,46 @@ export class HorrorAudio {
     lfo.start();
     wind.connect(windFilter).connect(gainNode(ctx, 0.012)).connect(this.ambienceBus);
     wind.start();
+  }
+
+  /** Always running, silent until setChase(true) raises its bus. */
+  startChaseMusic() {
+    const { ctx } = this;
+    this.isChasing = false;
+    this.chaseBeat = 0;
+    this.chaseBeatTimer = 0;
+    this.chaseBus = gainNode(ctx, 0);
+    this.chaseBus.connect(this.master);
+
+    const drone = ctx.createBiquadFilter();
+    drone.type = 'lowpass';
+    drone.frequency.value = 450;
+    [55, 58.27].forEach((freq) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.value = freq; // a semitone apart: it grinds
+      osc.connect(drone);
+      osc.start();
+    });
+    const pulse = gainNode(ctx, 0.5);
+    const beat = ctx.createOscillator();
+    beat.type = 'square';
+    beat.frequency.value = 1 / CHASE_BEAT;
+    beat.connect(gainNode(ctx, 0.5)).connect(pulse.gain); // the drone throbs between 0 and 1 on the beat
+    beat.start();
+    drone.connect(pulse).connect(this.chaseBus);
+
+    [880, 932.33].forEach((freq) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.value = freq;
+      const vibrato = ctx.createOscillator();
+      vibrato.frequency.value = 6;
+      vibrato.connect(gainNode(ctx, 9)).connect(osc.frequency);
+      vibrato.start();
+      osc.connect(gainNode(ctx, 0.05)).connect(this.chaseBus);
+      osc.start();
+    });
   }
 
   /** `source` names an emitter for a sound placed in the world; null plays it straight to the ears. */

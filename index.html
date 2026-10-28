@@ -31,6 +31,10 @@
       <span id="hint-text"></span>
     </div>
     <div id="toast"></div>
+    <div id="objective" class="hidden">
+      <span id="objective-step"></span>
+      <span id="objective-text"></span>
+    </div>
     <div id="struggle" class="hidden">
       <div class="struggle-text">Mash <kbd>SPACE</kbd> to break free!</div>
       <div class="track"><div id="struggle-fill" class="fill"></div></div>
@@ -68,6 +72,7 @@
         </p>
         <p class="hint" id="start-hint">Loading…</p>
         <div id="loading-bar"><span id="loading-fill"></span></div>
+        <button type="button" id="tutorial-button" class="tutorial-button">New here? Play the tutorial</button>
         <ul class="controls">
           <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</li>
           <li><kbd>Shift</kbd> Sprint — drains stamina, very loud</li>
@@ -87,7 +92,7 @@
           </li>
           <li>Crouch behind a bed and it cannot see you; shelves block its view</li>
           <li><kbd>Space</kbd> Jump</li>
-          <li><kbd>Esc</kbd> Pause</li>
+          <li><kbd>Esc</kbd> Pause menu</li>
         </ul>
         <form id="settings" class="settings" onsubmit="return false;">
           <h2>Settings</h2>
@@ -146,6 +151,7 @@
           <button type="button" data-action="resume">Resume</button>
           <button type="button" data-action="settings">Settings</button>
           <button type="button" data-action="restart">Restart</button>
+          <button type="button" data-action="skip" id="skip-tutorial" class="hidden">Skip tutorial</button>
           <button type="button" data-action="exit">Exit to title</button>
         </div>
         <div id="pause-settings" class="hidden">
@@ -158,7 +164,7 @@
       <div class="panel">
         <h1 id="end-title"></h1>
         <p id="end-text"></p>
-        <p class="hint">Click to play again</p>
+        <p class="hint" id="end-hint">Click to play again</p>
         <p class="byline">Way Out — a game by Quách Thiếu Khang</p>
       </div>
     </div>

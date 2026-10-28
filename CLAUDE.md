@@ -27,8 +27,8 @@ npm run models                       # re-compress model-originals/*.glb into pu
 
 Source is grouped by feature under `src/`; `main.js` (the entry `index.html` loads) stays at the top:
 
-- `core/` — `game.js` (rules), `input.js`, `settings.js`, `difficulty.js`
-- `level/` — `level.js` (map, rooms, grid queries), `pathfinding.js`, `scatter.js` (random keys/throwables)
+- `core/` — `game.js` (rules), `tutorial.js` (tutorial steps), `input.js`, `settings.js`, `difficulty.js`
+- `level/` — `level.js` (map, rooms, grid queries), `tutorial-map.js`, `pathfinding.js`, `scatter.js` (random keys/throwables)
 - `world/` — `world.js` (builds the scene), `furniture.js`, `lockers.js`, `rooms.js` (room paint + door signs), `textures.js`, `dust.js`
 - `player/` — `player.js`, `viewmodel.js`, `flashlight.js`, `hand-model.js`
 - `monster/` — `monster.js` (AI), `monster-model.js`
@@ -58,6 +58,12 @@ Everything else derives from those cells: `world.js` builds wall instances only 
 
 **Screens.** `#overlay` is the title screen (story, controls, settings), shown until the first start. After that, losing pointer lock (Esc) shows `#pause` (Resume / Settings / Restart / Exit to title); `hud.setPaused` picks which one. The pause menu's Settings view borrows the same `#settings` form (it is moved into `#pause-settings` and back). Restart and Exit reload the page for a fresh random run; Restart sets a `sessionStorage` flag (`way-out-restart`) so the next load shows a compact "click to start" title (`#overlay.quick`). Resuming needs a click because browsers only lock the pointer on a user gesture, and Chrome refuses a re-lock for about a second after Esc.
 
+**Tutorial.** The title screen's "Play the tutorial" button reloads with `sessionStorage` `way-out-launch` = `'tutorial'` (`'restart'` = a new run with the compact title; absent = full title). `main.js` then builds `TUTORIAL_MAP` / `TUTORIAL_ROOMS` (fixed layout, `O` tiles = hand-placed bottle/can) and passes a `Tutorial` to `Game`. `TUTORIAL_STEPS` (`core/tutorial.js`) each have objective text, an optional tip, a checkpoint cell, `isDone(state, flags)` (state = player cell/room, keys, batteries, hidden, monster state; flags such as `'hid'`, `'stunned'` are noted during the step) and `setup(director, isRetry)`, which stages the monster through a `MonsterDirector` that `Game` implements (`sleep`, `place`, `investigate`, `guard`, `charge`). In the tutorial, being caught never kills: `Game.retryStep` puts the player back at the step's checkpoint and re-runs its setup. Difficulty is forced to Easy. The monster supports the staging with `setDormant`, `place`, `calm`, `setPatrolArea` (a penned-in monster does not drift toward the player) and `alert(position, reactionTime)`. `test/tutorial.test.js` checks the map, the step order and the staging.
+
+**Chase music.** `audio.setChase(isChasing)` (called every frame from `Game.update`, and with `false` in `endRun`) fades a synthesized loop in and out: a dissonant low drone pulsing on a 150 bpm beat, a high shivering cluster, and drums scheduled from `audio.update`.
+
+**Hiding the arms.** `ViewModel.setShown` moves the arm/torch meshes to layer 1 (not rendered) instead of `root.visible = false`: hiding the hand light with them changed the light count and recompiled every shader, a hitch on entering a locker or being grabbed. Never toggle `visible` on anything that contains a light.
+
 **Game states** (`GameState` in game.js): PLAYING → GRABBED (mash Space to break free) → DYING (jumpscare close-up) → DEAD, or WON at the exit. Hiding in a locker is a sub-mode of PLAYING (`game.hidingSpot`): `player.update` is skipped and only the camera/look runs.
 
 **Assets.** Everything except two models is procedural: canvas textures (`textures.js`), WebAudio synthesized sounds (`audio.js`, no audio files), and procedural geometry. `public/models/monster.glb` and `hand.glb` are compressed copies of `model-originals/` (edit the originals, then `npm run models`); `gltf.js` loads them with the Meshopt decoder and treats an HTML response as missing (Vite serves index.html for unknown paths). Both have fallbacks (`createStalkerModel`, box hands). Their CC BY / CC BY-SA credits are in `index.html` and must stay. GLTFLoader strips `.` from node names, so bone regexes in `hand-model.js` allow an optional dot.
@@ -74,4 +80,4 @@ Static site: `npm run build` → `dist/`. `netlify.toml` sets the build command,
 
 ## Tests
 
-Vitest in a Node environment (no DOM/WebGL). Tests cover the pure logic: `level.test.js` (parsing, pathfinding, line of sight, main-map reachability, rooms), `scatter.test.js` (random placement over seeds via `seedrandom`), `player.test.js` (movement, stamina, noise via a fake input `{ keys: Set }`), `monster.test.js` (AI behaviour on small ASCII maps with a seeded RNG, thrown noises, difficulty, plus the flashlight), `throwables.test.js` (cannon-es flights against a floor and a wall), `key-sense.test.js`, `settings.test.js`. Modules that touch `document` (hud, textures, world, audio) are not unit-tested. Keep them out of the imports of tested modules.
+Vitest in a Node environment (no DOM/WebGL). Tests cover the pure logic: `level.test.js` (parsing, pathfinding, line of sight, main-map reachability, rooms), `scatter.test.js` (random placement over seeds via `seedrandom`), `player.test.js` (movement, stamina, noise via a fake input `{ keys: Set }`), `monster.test.js` (AI behaviour on small ASCII maps with a seeded RNG, thrown noises, difficulty, plus the flashlight), `throwables.test.js` (cannon-es flights against a floor and a wall), `tutorial.test.js` (tutorial map, steps, monster staging), `key-sense.test.js`, `settings.test.js`. Modules that touch `document` (hud, textures, world, audio) are not unit-tested. Keep them out of the imports of tested modules.

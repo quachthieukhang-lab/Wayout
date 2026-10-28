@@ -23,7 +23,10 @@ keys, keep out of its sight, and get out.
 - **Rooms you can tell apart.** Each ward has its own wall colour and a name plate at every door.
 - **Procedural everything.** Textures are drawn on canvas and every sound is synthesized with the Web Audio API. Only
   the monster and the hand are 3D models.
-- **Positional audio.** Use headphones: its footsteps tell you which way it is coming from.
+- **A tutorial.** Seven small rooms teach one skill each: sneaking, vents, the flashlight, sensing keys, hiding, luring
+  and the flash burst. Getting caught there just sends you back to the start of the step.
+- **Positional audio and chase music.** Use headphones: its footsteps tell you which way it is coming from, and the
+  music kicks in when it is hunting you.
 
 ## Controls
 
@@ -40,6 +43,8 @@ keys, keep out of its sight, and get out.
 | `G` / left click | Throw a bottle or can                                  |
 | `R`              | Sense the nearest key (then the exit, once it is open) |
 | `Esc`            | Pause menu: Resume, Settings, Restart, Exit to title   |
+
+New to the game? Click **New here? Play the tutorial** on the start screen.
 
 ## Getting started
 
@@ -71,8 +76,8 @@ Server, fails to resolve the `three` import.
 index.html          start screen, HUD, pause menu and end screen markup
 src/
   main.js           wires everything together and runs the frame loop
-  core/             game rules, input, settings, difficulty
-  level/            the map (ASCII grid, rooms), pathfinding, random placement
+  core/             game rules, tutorial steps, input, settings, difficulty
+  level/            the maps (ASCII grids, rooms, the tutorial), pathfinding, random placement
   world/            builds the hospital: walls, furniture, lockers, room paint, textures
   player/           movement and collision, first-person arms, flashlight
   monster/          AI state machine and its model

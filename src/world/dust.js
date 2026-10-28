@@ -1,13 +1,13 @@
 import * as THREE from 'three';
 
-const COUNT = 420;
+const COUNT = 220;
 const HALF_SIZE = 4; // particles live in an 8 m box that follows the player
 const MIN_Y = 0.2;
 const MAX_Y = 3.2;
 const DRIFT = 0.06; // m/s
-const SIZE = 22; // point size at 1 m, in pixels
+const SIZE = 9; // point size at 1 m, in pixels: fine specks, not snowflakes
 const BEAM_RANGE = 7;
-const BEAM_OPACITY = 0.55;
+const BEAM_OPACITY = 0.3;
 
 const vertexShader = /* glsl */ `
   uniform float uSize;

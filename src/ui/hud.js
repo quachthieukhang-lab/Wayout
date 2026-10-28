@@ -23,6 +23,12 @@ export function createHud() {
     pauseMenu: $('pause-menu'),
     pauseSettings: $('pause-settings'),
     settings: $('settings'),
+    skipTutorial: $('skip-tutorial'),
+    tutorialButton: $('tutorial-button'),
+    objective: $('objective'),
+    objectiveStep: $('objective-step'),
+    objectiveText: $('objective-text'),
+    endHint: $('end-hint'),
     endTitle: $('end-title'),
     endText: $('end-text'),
     hud: $('hud'),
@@ -91,14 +97,33 @@ export function createHud() {
       el.overlay.classList.toggle('quick', isQuick);
     },
 
-    /** @param {(action: 'resume' | 'settings' | 'back' | 'restart' | 'exit') => void} handler a pause-menu button was clicked */
+    /** In the tutorial the pause menu offers to skip it, and the title screen does not offer it again. @param {boolean} isTutorial */
+    setTutorial(isTutorial) {
+      el.skipTutorial.classList.toggle('hidden', !isTutorial);
+      el.tutorialButton.classList.toggle('hidden', isTutorial);
+    },
+
+    /** The tutorial's current objective. @param {{ step: string, text: string } | null} objective null hides it */
+    setObjective(objective) {
+      el.objective.classList.toggle('hidden', objective === null);
+      if (objective === null) return;
+      el.objectiveStep.textContent = objective.step;
+      el.objectiveText.textContent = objective.text;
+      el.objective.classList.remove('new');
+      void el.objective.offsetWidth; // restart the highlight animation
+      el.objective.classList.add('new');
+    },
+
+    /** @param {(action: 'resume' | 'settings' | 'back' | 'restart' | 'exit' | 'skip') => void} handler a pause-menu button was clicked */
     onMenuAction(handler) {
       el.pause.addEventListener('click', (event) => {
         const button = /** @type {HTMLElement | null} */ (
           /** @type {Element} */ (event.target).closest('[data-action]')
         );
         if (!button) return;
-        const action = /** @type {'resume' | 'settings' | 'back' | 'restart' | 'exit'} */ (button.dataset.action);
+        const action = /** @type {'resume' | 'settings' | 'back' | 'restart' | 'exit' | 'skip'} */ (
+          button.dataset.action
+        );
         if (action === 'settings' || action === 'back') showPauseSettings(action === 'settings');
         handler(action);
       });
@@ -181,9 +206,11 @@ export function createHud() {
       el.flash.classList.add('active');
     },
 
-    /** @param {boolean} isWin @param {string} text */
-    showEnd(isWin, text) {
-      el.endTitle.textContent = isWin ? 'YOU ESCAPED' : 'YOU DIED';
+    /** @param {boolean} isWin @param {string} text @param {{ title?: string, hint?: string }} [labels] */
+    showEnd(isWin, text, { title = isWin ? 'YOU ESCAPED' : 'YOU DIED', hint = 'Click to play again' } = {}) {
+      el.endTitle.textContent = title;
+      el.endHint.textContent = hint;
+      el.objective.classList.add('hidden');
       el.endText.textContent = text;
       el.endscreen.classList.toggle('win', isWin);
       el.endscreen.classList.remove('hidden');

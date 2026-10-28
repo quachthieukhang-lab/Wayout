@@ -6,6 +6,7 @@
 //   S  tall shelving: blocks movement and sight (cover)
 //   T  bed / gurney: blocks movement but it can see over it, unless you crouch behind it
 //   H  locker against a wall: hide inside it
+//   O  bottle or can placed by hand (the tutorial; the main map scatters them at random)
 export const CELL_SIZE = 3;
 export const WALL_HEIGHT = 3.4;
 
@@ -108,7 +109,7 @@ export function parseLevel(rows) {
     shelves: [],
     beds: [],
     lockers: [],
-    throwables: [], // filled in by scatterItems
+    throwables: [], // `O` tiles, or filled in by scatterItems
   };
   const markers = { P: 'spawn', M: 'monsterSpawn', E: 'exit' };
   const lists = {
@@ -119,6 +120,7 @@ export function parseLevel(rows) {
     S: level.shelves,
     T: level.beds,
     H: level.lockers,
+    O: level.throwables,
   };
 
   rows.forEach((row, z) => {
