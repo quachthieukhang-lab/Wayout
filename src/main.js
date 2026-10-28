@@ -21,6 +21,8 @@ import { createGraphics } from './render/graphics.js';
 import { createDust } from './world/dust.js';
 
 const MAX_DT = 0.05;
+// Chromium sometimes reports a huge movementX/Y right after the pointer is captured; real moves are far smaller.
+const MAX_MOUSE_STEP = 300; // px in one event
 // sessionStorage: how the next page load starts. 'restart' = a new run with a compact title screen,
 // 'tutorial' = the tutorial. Absent = the full title screen.
 const LAUNCH_KEY = 'way-out-launch';
@@ -94,6 +96,8 @@ const game = new Game({
   hud,
   tutorial,
 });
+// Dev builds only: lets a DevTools session inspect and drive a run (e.g. the headless movement check).
+if (import.meta.env.DEV) /** @type {any} */ (window).wayOut = { game, player, input };
 
 // The start screen waits for both models, then compiles every shader, so nothing hitches the first time it appears.
 const LOADING_STEPS = 3; // hand, monster, shaders
@@ -137,13 +141,15 @@ hud.onMenuAction((action) => {
   else if (action === 'exit') reload(null);
 });
 
+// Firefox reports a refused capture only through this event; Chrome and Edge also reject the promise (see lockPointer).
+document.addEventListener('pointerlockerror', () => hud.showResumeRetry());
 document.addEventListener('pointerlockchange', () => {
   if (game.isOver) return;
   game.setPaused(document.pointerLockElement !== renderer.domElement);
 });
 
 document.addEventListener('mousemove', (e) => {
-  if (!player.enabled) return;
+  if (!player.enabled || Math.abs(e.movementX) > MAX_MOUSE_STEP || Math.abs(e.movementY) > MAX_MOUSE_STEP) return;
   player.look(e.movementX, e.movementY);
   viewModel.addSway(e.movementX, e.movementY);
 });
@@ -171,7 +177,7 @@ renderer.setAnimationLoop((timestamp) => {
 function lockPointer() {
   audio.start();
   // Chrome refuses a re-lock for about a second after Esc; the menu simply stays open and the next click works.
-  Promise.resolve(renderer.domElement.requestPointerLock()).catch(() => {});
+  Promise.resolve(renderer.domElement.requestPointerLock()).catch(() => hud.showResumeRetry());
 }
 
 /**

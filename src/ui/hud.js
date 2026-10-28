@@ -23,6 +23,7 @@ export function createHud() {
     pauseMenu: $('pause-menu'),
     pauseSettings: $('pause-settings'),
     settings: $('settings'),
+    resumeRetry: $('resume-retry'),
     skipTutorial: $('skip-tutorial'),
     tutorialButton: $('tutorial-button'),
     objective: $('objective'),
@@ -86,10 +87,20 @@ export function createHud() {
 
     /** @param {boolean} isPaused */
     setPaused(isPaused) {
-      if (!isPaused) hasStarted = true;
+      if (!isPaused) {
+        hasStarted = true;
+        // A menu button keeps focus after the click; Space (jump) would press it again.
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+      }
       el.overlay.classList.toggle('hidden', !isPaused || hasStarted);
       el.pause.classList.toggle('hidden', !isPaused || !hasStarted);
+      el.resumeRetry.classList.add('hidden');
       showPauseSettings(false);
+    },
+
+    /** The browser refused to capture the mouse (Chrome and Edge do for about a second after Esc). */
+    showResumeRetry() {
+      el.resumeRetry.classList.remove('hidden');
     },
 
     /** Restarting: the title screen shrinks to a "click to play" prompt. @param {boolean} isQuick */

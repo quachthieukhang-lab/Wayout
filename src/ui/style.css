@@ -19,6 +19,7 @@ body {
   background: #000;
   font-family: Georgia, 'Times New Roman', serif;
   color: var(--text);
+  -webkit-user-select: none; /* Safari */
   user-select: none;
 }
 
@@ -599,4 +600,17 @@ kbd {
 
 #overlay.quick .tutorial-button {
   display: none;
+}
+
+/* Phones and tablets: no keyboard or mouse to play with */
+.touch-note {
+  display: none;
+  margin-top: 10px;
+  color: #e0a0a0;
+}
+
+@media (pointer: coarse) and (hover: none) {
+  .touch-note {
+    display: block;
+  }
 }
