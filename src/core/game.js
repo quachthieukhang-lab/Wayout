@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Easing } from '@tweenjs/tween.js';
-import { worldToCell, cellToWorld, exitApproach } from '../level/level.js';
+import { worldToCell, cellToWorld, exitApproach, noisyFloorAt } from '../level/level.js';
+import { RADIO_NOISE } from '../world/radios.js';
 import { KeySense } from '../items/key-sense.js';
 import { hasLineOfSight } from '../level/pathfinding.js';
 import { MonsterState } from '../monster/monster.js';
@@ -36,6 +37,10 @@ const REGEN_DELAY = 8; // seconds without damage before regenerating
 
 const KEY_NOISE_RANGE = 18; // how far the clink of a picked-up key carries
 const THROW_KEYS = ['KeyG', 'Mouse0'];
+const MONSTER_DOOR_TIME = 1.4; // s it spends forcing a closed door
+const MONSTER_DOOR_SWING = 1.6; // rad/s, slower than a hand on the handle
+const DOOR_NOISE = 6; // m a door the player swings can be heard
+const CAREFUL_FLOOR_VOLUME = 0.25; // glass and boards still whisper under a careful step
 
 const GRAB_DAMAGE = 20;
 const GRAB_DAMAGE_PER_SECOND = 7;
@@ -112,6 +117,7 @@ export class Game {
     this.hasShownSenseTip = false;
     this.throwing = new Throwing(deps.world.scene, deps.world.colliders);
     this.hasShownThrowTip = false;
+    this.floorTips = new Set(); // noisy floor kinds already explained
     /** @type {import('./difficulty.js').Difficulty} */
     this.difficulty = DIFFICULTIES.normal;
     this.tutorial = deps.tutorial ?? null;
@@ -180,6 +186,8 @@ export class Game {
     this.handleThrowInput();
     this.updateThrown(dt);
     this.updateKeySense(dt);
+    this.updateRadios(dt);
+    this.updateMonsterAtDoors();
     this.updateMonster(dt);
     this.audio.setChase(this.monster.state === MonsterState.CHASE);
     if (this.state !== GameState.PLAYING) return;
@@ -256,21 +264,66 @@ export class Game {
       if (this.input.wasPressed('KeyE')) this.leaveHiding();
       return;
     }
+    const action = this.findInteraction();
+    this.hud.setPrompt(action?.prompt ?? '');
+    if (action?.run && this.input.wasPressed('KeyE')) action.run();
+  }
+
+  /**
+   * What E would do right now, nearest kind first: pick up, hide, door, radio.
+   * @returns {{ prompt: string, run?: () => void } | null} no `run` = shown but not usable right now
+   */
+  findInteraction() {
     const item = this.pickups.findTarget(this.camera);
-    const locker = item ? null : this.world.lockers.findNear(this.player.position);
-    const isHandsFull = item !== null && isThrowable(item) && !this.throwing.canCarryMore;
-    this.hud.setPrompt(
-      isHandsFull
-        ? 'Your hands are full — throw something first'
-        : item
-          ? `[E] Pick up ${this.pickups.label(item)}`
-          : locker
-            ? '[E] Hide in the locker'
-            : '',
-    );
-    if (!this.input.wasPressed('KeyE') || isHandsFull) return;
-    if (item) this.pickUp(item);
-    else if (locker) this.enterHiding(locker);
+    if (item) {
+      if (isThrowable(item) && !this.throwing.canCarryMore)
+        return { prompt: 'Your hands are full — throw something first' };
+      return { prompt: `[E] Pick up ${this.pickups.label(item)}`, run: () => this.pickUp(item) };
+    }
+    const position = this.player.position;
+    const locker = this.world.lockers.findNear(position);
+    if (locker) return { prompt: '[E] Hide in the locker', run: () => this.enterHiding(locker) };
+    const door = this.world.doors.findNear(position);
+    if (door) return { prompt: `[E] ${door.isOpen ? 'Close' : 'Open'} the door`, run: () => this.useDoor(door) };
+    const radio = this.world.radios.findNear(position);
+    if (!radio) return null;
+    if (radio.timeLeft > 0) return { prompt: 'The radio crackles…' };
+    if (radio.cooldown > 0) return { prompt: 'The radio is dead for now' };
+    return { prompt: '[E] Switch on the radio — the noise lures it there', run: () => this.useRadio(radio) };
+  }
+
+  /** @param {import('../world/doors.js').Door} door */
+  useDoor(door) {
+    const doors = this.world.doors;
+    if (door.isOpen && (doors.isBlocked(door, this.player.position) || doors.isBlocked(door, this.monster.position))) {
+      this.hud.toast('Something is in the way');
+      return;
+    }
+    doors.setOpen(door, !door.isOpen);
+    this.audio.doorCreak(door.position, 0.6);
+    this.monster.hearNoise(door.position, DOOR_NOISE);
+  }
+
+  /** @param {import('../world/radios.js').Radio} radio */
+  useRadio(radio) {
+    if (!this.world.radios.switchOn(radio)) return;
+    this.audio.radio(radio.position, radio.timeLeft);
+    this.hud.toast('The radio blares into the dark...');
+  }
+
+  /** A playing radio keeps calling the monster over. */
+  updateRadios(dt) {
+    for (const radio of this.world.radios.update(dt)) this.monster.hearNoise(radio.position, RADIO_NOISE);
+  }
+
+  /** A closed door on its path: it stops, forces it open slowly, and the hinges scream. */
+  updateMonsterAtDoors() {
+    if (this.monster.isDormant || this.monster.holdTimer > 0) return;
+    const door = this.world.doors.closedDoorAhead(this.monster.position, this.monster.nextCell);
+    if (!door) return;
+    this.monster.hold(MONSTER_DOOR_TIME);
+    this.world.doors.setOpen(door, true, MONSTER_DOOR_SWING);
+    this.audio.doorCreak(door.position);
   }
 
   pickUp(item) {
@@ -472,6 +525,9 @@ export class Game {
     this.monsterStepTimer = MONSTER_STEP_INTERVAL;
     const muffle = hasLineOfSight(this.level, this.monster.position, this.player.position) ? 1 : WALL_MUFFLE_VOLUME;
     this.audio.monsterStep(muffle, this.monster.position); // the audio panner handles the distance fall-off
+    const cell = worldToCell(this.monster.position.x, this.monster.position.z);
+    const floor = noisyFloorAt(this.level, cell.x, cell.z);
+    if (floor) this.audio.floorNoise(floor.sound, muffle, this.monster.position); // you can hear it crunch
   }
 
   updateFootsteps() {
@@ -488,6 +544,20 @@ export class Game {
           ? FOOTSTEP_VOLUME.quiet
           : FOOTSTEP_VOLUME.walk;
     this.audio.footstep(volume);
+    this.stepOnNoisyFloor(isCrouching || isWalkingQuietly);
+  }
+
+  /** Glass and loose boards: a careless step is loud enough for it to hear; a careful one only whispers. */
+  stepOnNoisyFloor(isCareful) {
+    const { x, z } = worldToCell(this.player.position.x, this.player.position.z);
+    const floor = noisyFloorAt(this.level, x, z);
+    if (!floor) return;
+    this.audio.floorNoise(floor.sound, isCareful ? CAREFUL_FLOOR_VOLUME : 1);
+    if (isCareful) return;
+    this.monster.hearNoise(this.player.position, floor.radius);
+    if (this.floorTips.has(floor.sound)) return;
+    this.floorTips.add(floor.sound);
+    this.hud.toast(floor.tip);
   }
 
   regenerate(dt) {

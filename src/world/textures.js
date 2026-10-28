@@ -199,3 +199,48 @@ export function createRoomSignTexture(name, color) {
     { width: 512, height: 128, isRepeating: false },
   );
 }
+
+/** Scattered glass shards on a transparent background, for a floor decal. */
+export function createGlassTexture(rng) {
+  return canvasTexture(
+    (ctx, w, h) => {
+      for (let i = 0; i < 70; i++) {
+        const x = rng() * w;
+        const y = rng() * h;
+        const size = 3 + rng() * 10;
+        ctx.fillStyle = `rgba(${200 + rng() * 55}, ${220 + rng() * 35}, 255, ${0.35 + rng() * 0.45})`;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + (rng() - 0.5) * size * 2, y + rng() * size);
+        ctx.lineTo(x + (rng() - 0.5) * size, y - rng() * size);
+        ctx.closePath();
+        ctx.fill();
+      }
+    },
+    { isRepeating: false },
+  );
+}
+
+/** Worn, gappy floorboards, for a floor decal. */
+export function createBoardsTexture(rng) {
+  return canvasTexture(
+    (ctx, w, h) => {
+      const boards = 6;
+      for (let i = 0; i < boards; i++) {
+        const shade = 70 + rng() * 30;
+        ctx.fillStyle = `rgb(${shade + 20}, ${shade}, ${shade - 25})`;
+        ctx.fillRect(0, (i * h) / boards + 2, w, h / boards - 4);
+        ctx.strokeStyle = 'rgba(30, 20, 10, 0.35)';
+        for (let j = 0; j < 5; j++) {
+          const y = (i * h) / boards + 6 + rng() * (h / boards - 12);
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(w, y + (rng() - 0.5) * 6);
+          ctx.stroke();
+        }
+      }
+      addGrime(ctx, w, h, rng, 20, 'rgba(20,12,6,0.4)');
+    },
+    { isRepeating: false },
+  );
+}

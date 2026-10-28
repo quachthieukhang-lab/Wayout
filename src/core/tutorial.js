@@ -39,7 +39,7 @@ export const TUTORIAL_STEPS = Object.freeze([
   },
   {
     text: 'Hold Z to walk quietly to the end of the hall. Keep the Noise meter low',
-    tip: 'It hears footsteps. Sprinting (Shift) is fast, but very loud.',
+    tip: 'It hears footsteps, and broken glass crunches. Sprinting (Shift) is fast, but very loud.',
     checkpoint: { x: 6, z: 2 },
     setup: (monster) => monster.sleep(),
     isDone: (state) => state.room === 'QUIET HALL' && state.cell.x >= 14,

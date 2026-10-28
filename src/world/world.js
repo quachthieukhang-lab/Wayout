@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { CELL_SIZE, WALL_HEIGHT, cellToWorld, isWalkable, isWallTile, roomAt } from '../level/level.js';
 import { addFurniture } from './furniture.js';
 import { createLockers } from './lockers.js';
+import { createDoors } from './doors.js';
+import { createRadios } from './radios.js';
 import { addRoomPaint } from './rooms.js';
 import {
   createRng,
@@ -11,11 +13,17 @@ import {
   createBloodTexture,
   createMessageTexture,
   createExitSignTexture,
+  createGlassTexture,
+  createBoardsTexture,
 } from './textures.js';
 
 const FOG_COLOR = 0x030304;
-const FOG_DENSITY = 0.085;
-const AMBIENT_INTENSITY = 0.35;
+const FOG_DENSITY = 0.075;
+// Moonlight seeping in: with the flashlight off the halls stay faintly readable, so saving battery is a real option.
+const AMBIENT_INTENSITY = 0.85;
+const AMBIENT_SKY = 0x46506a;
+const AMBIENT_GROUND = 0x1a1612;
+const NOISY_FLOOR_DECAL = 2.4; // m
 
 const LAMP_COLOR = 0xffc98a;
 const LAMP_ROOM_TINT = 0.25; // how much a lamp takes on its room's colour
@@ -49,7 +57,7 @@ export function createWorld(level, rooms = [], seed = 7) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(FOG_COLOR);
   scene.fog = new THREE.FogExp2(FOG_COLOR, FOG_DENSITY);
-  scene.add(new THREE.HemisphereLight(0x2a3040, 0x080606, AMBIENT_INTENSITY));
+  scene.add(new THREE.HemisphereLight(AMBIENT_SKY, AMBIENT_GROUND, AMBIENT_INTENSITY));
 
   const colliders = [];
   addFloorAndCeiling(scene, colliders, level, rng);
@@ -57,6 +65,9 @@ export function createWorld(level, rooms = [], seed = 7) {
   addVents(scene, colliders, level);
   addFurniture(scene, colliders, level, rng);
   const lockers = createLockers(scene, colliders, level, rng);
+  const doors = createDoors(scene, colliders, level);
+  const radios = createRadios(scene, colliders, level);
+  addNoisyFloors(scene, level, rng);
   addBloodDecals(scene, level, rng);
   addWallMessages(scene, level, rng);
   addRoomPaint(scene, level, rooms, rng);
@@ -69,10 +80,13 @@ export function createWorld(level, rooms = [], seed = 7) {
     scene,
     colliders,
     lockers,
+    doors,
+    radios,
     /** @param {number} dt */
     update(dt) {
       lamps.forEach((lamp) => lamp.update(dt));
       exit.update(dt);
+      doors.update(dt);
     },
     openExit: () => exit.open(),
   };
@@ -167,6 +181,20 @@ function decalMaterial(map) {
     polygonOffsetFactor: -2,
     roughness: 0.4,
   });
+}
+
+/** Glass shards and loose boards on the floor cells that make a careless step loud. */
+function addNoisyFloors(scene, level, rng) {
+  const materials = { G: decalMaterial(createGlassTexture(rng)), W: decalMaterial(createBoardsTexture(rng)) };
+  const geometry = new THREE.PlaneGeometry(NOISY_FLOOR_DECAL, NOISY_FLOOR_DECAL);
+  for (const cell of level.noisyFloors) {
+    const { x, z } = cellToWorld(cell);
+    const decal = new THREE.Mesh(geometry, materials[level.tiles[cell.z][cell.x]]);
+    decal.rotation.set(-Math.PI / 2, 0, Math.floor(rng() * 4) * (Math.PI / 2));
+    decal.position.set(x, 0.015, z);
+    decal.receiveShadow = true;
+    scene.add(decal);
+  }
 }
 
 function addBloodDecals(scene, level, rng) {

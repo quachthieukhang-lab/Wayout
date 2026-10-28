@@ -114,7 +114,7 @@ export class Throwing {
     const rested = [];
     if (this.flying.length === 0) return { impacts, rested };
 
-    this.removeOpenedColliders();
+    this.syncColliders();
     this.world.step(FIXED_STEP, dt, MAX_SUBSTEPS);
     this.flying = this.flying.filter((flight) => {
       const { item, body } = flight;
@@ -160,14 +160,16 @@ export class Throwing {
     return body;
   }
 
-  /** The exit door's box leaves the colliders when it opens; its physics twin has to go too. */
-  removeOpenedColliders() {
-    if (this.staticBodies.size === this.colliders.length) return;
+  /** Doors add and remove colliders as they close and open (so does the exit); keep the physics twins in step. */
+  syncColliders() {
     const current = new Set(this.colliders);
     for (const [box, body] of this.staticBodies) {
       if (current.has(box)) continue;
       this.world.removeBody(body);
       this.staticBodies.delete(box);
+    }
+    for (const box of this.colliders) {
+      if (!this.staticBodies.has(box)) this.staticBodies.set(box, this.addStaticBox(box));
     }
   }
 }

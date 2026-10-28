@@ -94,6 +94,7 @@ export class Monster {
     this.searchTimer = 0;
     this.stunTimer = 0;
     this.reactTimer = 0;
+    this.holdTimer = 0; // busy, e.g. forcing a door
     this.awareness = 0; // 0..1, reaching 1 starts a chase
     this.lastKnown = new THREE.Vector3();
     this.rage = 0;
@@ -143,11 +144,22 @@ export class Monster {
     this.calm();
   }
 
+  /** Stops in place for a while, still watching and listening. @param {number} seconds */
+  hold(seconds) {
+    this.holdTimer = seconds;
+  }
+
+  /** @returns {import('../level/level.js').Cell | null} the next cell on its path */
+  get nextCell() {
+    return this.path[0] ?? null;
+  }
+
   /** Back to an unaware patrol. */
   calm() {
     this.state = MonsterState.PATROL;
     this.awareness = 0;
     this.reactTimer = 0;
+    this.holdTimer = 0;
     this.path = [];
   }
 
@@ -251,7 +263,8 @@ export class Monster {
     this.isPerceiving = isPerceived;
 
     this._previous.copy(this.position);
-    this.think(dt, target, distance, isPerceived);
+    if (this.holdTimer > 0) this.holdTimer -= dt;
+    else this.think(dt, target, distance, isPerceived);
     this.speed = dt > 0 ? this._previous.distanceTo(this.position) / dt : 0;
     this.animate(dt);
     this.updateEyes(dt);

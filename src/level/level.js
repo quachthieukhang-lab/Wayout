@@ -7,6 +7,9 @@
 //   T  bed / gurney: blocks movement but it can see over it, unless you crouch behind it
 //   H  locker against a wall: hide inside it
 //   O  bottle or can placed by hand (the tutorial; the main map scatters them at random)
+//   D  double door in a doorway: closed, it blocks sight and the player; the monster forces it open
+//   G  broken glass, W  loose floorboards: a careless step is loud (crouch or walk quietly over them)
+//   R  radio on a crate: switch it on to lure the monster
 export const CELL_SIZE = 3;
 export const WALL_HEIGHT = 3.4;
 
@@ -16,22 +19,22 @@ export const LEVEL_MAP = Object.freeze([
   '#############################',
   '#T.T.T.#H.....H#............#',
   '#.P...L#.T.T.T.#.SS.SS.SS.S.#',
-  '#T.T.T.V.......#.....L......#',
-  '#......#.T.T.T.#.SS.SS.SS.S.#',
+  '#T.T.T.V..WW...#...WWL......#',
+  '#....R.#.T.T.T.#.SS.SS.SS.S.#',
   '#H.....#B......#H.........H.#',
-  '###.#######.######.######.###',
-  '#H....L....................H#',
-  '####.######.####.######.#####',
+  '###D#######D######.######D###',
+  '#H....L.GG..........GG.....H#',
+  '####D######.####.######D#####',
   '#B..L..#....L.....#S......S.#',
-  '#.S.S.S#.TTT..TTT.#..T..T...#',
+  '#.S.S.S#.TTT..TTT.#..T..T.R.#',
   '#.S.S.S#....M.....V...L.....#',
-  '#.......V......B..#..T..T...#',
+  '#.......VR.....B..#..T..T...#',
   '#H.....H#H........H#H......H#',
-  '##.##########.###########.###',
-  '#.......L.H.................#',
-  '######.#####V#######.########',
+  '##.##########D###########.###',
+  '#.......L.H.....GG..........#',
+  '######D#####V#######D########',
   '#SS.S..S.SS...#T.T.T.T.T.T.T#',
-  '#...T..T..T.L.V.....L.......E',
+  '#...TWWT..T.L.V.....L.......E',
   '#H..........BH#T.T.T.T.T...H#',
   '#############################',
 ]);
@@ -76,7 +79,7 @@ const DIRECTIONS = [
  *   width: number, height: number, tiles: readonly string[], walls: boolean[][], opaque: boolean[][],
  *   floorCells: Cell[], monsterCells: Cell[], spawn: Cell, monsterSpawn: Cell, exit: Cell,
  *   keys: Cell[], batteries: Cell[], lamps: Cell[], vents: Cell[], shelves: Cell[], beds: Cell[], lockers: Cell[],
- *   throwables: Cell[]
+ *   throwables: Cell[], doors: Cell[], radios: Cell[], noisyFloors: Cell[]
  * }} Level
  */
 
@@ -110,6 +113,9 @@ export function parseLevel(rows) {
     beds: [],
     lockers: [],
     throwables: [], // `O` tiles, or filled in by scatterItems
+    doors: [],
+    radios: [],
+    noisyFloors: [],
   };
   const markers = { P: 'spawn', M: 'monsterSpawn', E: 'exit' };
   const lists = {
@@ -121,6 +127,10 @@ export function parseLevel(rows) {
     T: level.beds,
     H: level.lockers,
     O: level.throwables,
+    D: level.doors,
+    R: level.radios,
+    G: level.noisyFloors,
+    W: level.noisyFloors,
   };
 
   rows.forEach((row, z) => {
@@ -157,6 +167,28 @@ export function isWalkable(level, x, z) {
 /** Sight passes through (floors, vents, low beds). @param {Level} level @param {number} x @param {number} z */
 export function isTransparent(level, x, z) {
   return isInside(level, x, z) && !level.opaque[z][x];
+}
+
+/** Floors that give a careless step away: how far it carries (m), and the tip shown the first time. */
+export const NOISY_FLOORS = Object.freeze({
+  G: Object.freeze({
+    sound: 'glass',
+    radius: 14,
+    tip: 'Broken glass crunches loudly. Crouch (C) or walk quietly (Z) over it.',
+  }),
+  W: Object.freeze({
+    sound: 'boards',
+    radius: 9,
+    tip: 'Loose floorboards creak. Crouch (C) or walk quietly (Z) over them.',
+  }),
+});
+
+/**
+ * @param {Level} level @param {number} x @param {number} z
+ * @returns {{ sound: 'glass' | 'boards', radius: number, tip: string } | null}
+ */
+export function noisyFloorAt(level, x, z) {
+  return (isInside(level, x, z) && NOISY_FLOORS[level.tiles[z][x]]) || null;
 }
 
 /** @param {Level} level @param {number} x @param {number} z */

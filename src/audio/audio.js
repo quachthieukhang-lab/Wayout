@@ -17,6 +17,8 @@ const EMITTERS = Object.freeze({
   distant: { refDistance: DISTANT_RADIUS, rolloffFactor: 1 },
 });
 const IMPACT_EMITTER = Object.freeze({ refDistance: 4, rolloffFactor: 1 }); // a thrown bottle or can landing
+const RADIO_TUNE = Object.freeze([523, 659, 784, 659, 587, 698, 880, 698]); // a tinny old waltz
+const RADIO_NOTE = 0.35; // s per note
 const IMPACT_VOICES = 3; // impacts overlap (shards still tinkling as a can bounces): each gets its own emitter
 const GLASS_TINKLES = 6;
 // Chase music: a dissonant low drone pulsing on the beat, a shivering high cluster, and drums.
@@ -35,6 +37,8 @@ export class HorrorAudio {
     this.scene = scene;
     this.ctx = null;
     this.emitters = /** @type {Record<keyof typeof EMITTERS, THREE.PositionalAudio>} */ ({});
+    /** @type {THREE.PositionalAudio | null} created the first time a radio plays */
+    this.radioEmitter = null;
     this.masterVolume = MASTER_VOLUME;
     this.ambienceVolume = 1;
     this.heartTimer = 0;
@@ -197,6 +201,69 @@ export class HorrorAudio {
     this.noise({ duration: 0.08, volume: 0.4 * volume, freq: 2200, Q: 4, source });
     this.tone({ type: 'triangle', freq: 1250, freqEnd: 1150, duration: 0.25, volume: 0.12 * volume, source });
     this.tone({ freq: 1870, duration: 0.18, volume: 0.06 * volume, source });
+  }
+
+  /**
+   * A step on glass or loose boards. @param {'glass' | 'boards'} kind @param {number} volume 0..1
+   * @param {Point} [position] where it happened; omitted = under the player's own feet
+   */
+  floorNoise(kind, volume, position) {
+    if (!this.ctx) return;
+    const source = position ? this.impactEmitterAt(position) : null;
+    if (kind === 'boards') {
+      this.tone({
+        type: 'sawtooth',
+        freq: 190,
+        freqEnd: 120 + Math.random() * 90,
+        duration: 0.4,
+        volume: 0.07 * volume,
+        attack: 0.05,
+        filterFreq: 900,
+        source,
+      });
+      return;
+    }
+    this.noise({ duration: 0.12, volume: 0.35 * volume, type: 'highpass', freq: 3200, source });
+    for (let i = 0; i < 3; i++) {
+      this.tone({
+        freq: 3000 + Math.random() * 2500,
+        duration: 0.06 + Math.random() * 0.08,
+        volume: 0.04 * volume,
+        delay: Math.random() * 0.08,
+        source,
+      });
+    }
+  }
+
+  /** A heavy door swinging on rusty hinges. @param {Point} position @param {number} [volume] 0..1 */
+  doorCreak(position, volume = 1) {
+    if (!this.ctx) return;
+    const source = this.impactEmitterAt(position);
+    this.tone({
+      type: 'sawtooth',
+      freq: 260,
+      freqEnd: 180,
+      duration: 0.9,
+      volume: 0.12 * volume,
+      attack: 0.08,
+      filterFreq: 1200,
+      source,
+    });
+    this.noise({ duration: 0.25, volume: 0.15 * volume, freq: 300, delay: 0.75, source });
+  }
+
+  /** An old radio: static under a tinny tune, from where it stands. @param {Point} position @param {number} duration s */
+  radio(position, duration) {
+    if (!this.ctx) return;
+    this.radioEmitter ??= this.createEmitter(IMPACT_EMITTER);
+    this.radioEmitter.position.set(position.x, SOURCE_HEIGHT, position.z);
+    this.radioEmitter.updateMatrixWorld();
+    const source = this.radioEmitter;
+    this.noise({ duration, volume: 0.1, freq: 1800, Q: 0.7, attack: 0.3, source });
+    for (let t = 0, i = 0; t < duration - RADIO_NOTE; t += RADIO_NOTE, i++) {
+      const freq = RADIO_TUNE[i % RADIO_TUNE.length];
+      this.tone({ type: 'square', freq, duration: RADIO_NOTE * 0.9, volume: 0.05, delay: t, filterFreq: 2400, source });
+    }
   }
 
   /** Metal locker door: a short rattle and a low clunk. */
