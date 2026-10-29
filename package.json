@@ -15,7 +15,7 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "check": "npm run lint && npm run typecheck && npm run format:check && npm test",
-    "deploy": "npm run check && npm run build && npx --yes netlify-cli deploy --prod --dir dist",
+    "deploy": "npm run check && npm run build && npx --yes netlify-cli@27.15.0 deploy --prod --dir dist",
     "models": "gltf-transform optimize model-originals/hand.glb public/models/hand.glb --compress meshopt --texture-compress webp --texture-size 1024 --simplify false --join false --flatten false --instance false --palette false --resample false && gltf-transform optimize model-originals/monster.glb public/models/monster.glb --compress meshopt --texture-compress webp --texture-size 1024 --simplify false --join false --flatten false --instance false --palette false --resample false"
   },
   "dependencies": {

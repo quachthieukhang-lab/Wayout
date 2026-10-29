@@ -81,7 +81,7 @@ The settings form is a list of sections (Gameplay, Audio, Controls, Display; `.s
 
 ## Deploy
 
-Static site: `npm run build` → `dist/`. `netlify.toml` sets the build command, publish directory and Node version. Deploys go out from this machine with the Netlify CLI (project `wayout-khangqt`): `npm run deploy` runs `check`, builds and uploads `dist/` to production. The one-time `npx netlify-cli login` + `npx netlify-cli link --name wayout-khangqt` store the link in `.netlify/` (git-ignored).
+Static site: `npm run build` → `dist/`. `netlify.toml` sets the build command, publish directory and Node version. Deploys go out from this machine with the Netlify CLI (project `wayout-khangqt`): `npm run deploy` runs `check`, builds and uploads `dist/` to production with an exact, pinned `netlify-cli` version (bump it on purpose; an unpinned `npx` would run whatever version is newest with your Netlify login). The one-time `npx netlify-cli login` + `npx netlify-cli link --name wayout-khangqt` store the link in `.netlify/` (git-ignored).
 
 ## Tests
 
