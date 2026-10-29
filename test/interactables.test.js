@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { LEVEL_MAP, parseLevel, cellToWorld, isWalkable, isTransparent, noisyFloorAt } from '../src/level/level.js';
 import { findPath, hasLineOfSight } from '../src/level/pathfinding.js';
-import { createDoors } from '../src/world/doors.js';
+import { createDoors, JAM_TIME } from '../src/world/doors.js';
 import { createRadios, PLAY_TIME } from '../src/world/radios.js';
 import { Monster } from '../src/monster/monster.js';
 
@@ -63,6 +63,48 @@ describe('doors', () => {
     const [door] = doors.doors;
     expect(doors.isBlocked(door, door.position)).toBe(true);
     expect(doors.isBlocked(door, at(5, 2))).toBe(false);
+  });
+
+  it('will not close on someone standing off to the side of the doorway either', () => {
+    const { doors } = setup();
+    const [door] = doors.doors; // the wall runs along Z here, so the doorway spans Z
+    expect(doors.isBlocked(door, { x: door.position.x, z: door.position.z + 1.1 })).toBe(true);
+    expect(doors.isBlocked(door, { x: door.position.x + 1.5, z: door.position.z })).toBe(false);
+  });
+
+  it('stays jammed open for a while after the monster forces it', () => {
+    const { level, doors } = setup();
+    const [door] = doors.doors;
+    doors.setOpen(door, false);
+    doors.forceOpen(door);
+    expect(door.isOpen).toBe(true);
+    expect(isTransparent(level, 3, 2)).toBe(true);
+    expect(door.jamTimer).toBe(JAM_TIME);
+
+    for (let t = 0; t < JAM_TIME + 0.1; t += DT) doors.update(DT);
+    expect(door.jamTimer).toBe(0);
+  });
+
+  it('swing their leaves shut and open again', () => {
+    const { doors } = setup();
+    const [door] = doors.doors;
+    const [left, right] = door.pivots;
+    doors.setOpen(door, false);
+    for (let i = 0; i < 60; i++) doors.update(DT);
+    expect(left.rotation.y).toBeCloseTo(0);
+    expect(right.rotation.y).toBeCloseTo(0);
+
+    doors.setOpen(door, true);
+    for (let i = 0; i < 60; i++) doors.update(DT);
+    expect(left.rotation.y).toBeGreaterThan(1.4);
+    expect(right.rotation.y).toBeLessThan(-1.4); // mirror images
+  });
+
+  it('can be used from close by only', () => {
+    const { doors } = setup();
+    const [door] = doors.doors;
+    expect(doors.findNear({ x: door.position.x - 1.5, z: door.position.z })).toBe(door);
+    expect(doors.findNear(at(1, 1))).toBeNull();
   });
 });
 

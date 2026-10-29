@@ -38,7 +38,6 @@ const REGEN_DELAY = 8; // seconds without damage before regenerating
 const KEY_NOISE_RANGE = 18; // how far the clink of a picked-up key carries
 const THROW_KEYS = ['KeyG', 'Mouse0'];
 const MONSTER_DOOR_TIME = 1.4; // s it spends forcing a closed door
-const MONSTER_DOOR_SWING = 1.6; // rad/s, slower than a hand on the handle
 const DOOR_NOISE = 6; // m a door the player swings can be heard
 const CAREFUL_FLOOR_VOLUME = 0.25; // glass and boards still whisper under a careful step
 
@@ -284,6 +283,7 @@ export class Game {
     const locker = this.world.lockers.findNear(position);
     if (locker) return { prompt: '[E] Hide in the locker', run: () => this.enterHiding(locker) };
     const door = this.world.doors.findNear(position);
+    if (door?.jamTimer > 0) return { prompt: 'The door is jammed' };
     if (door) return { prompt: `[E] ${door.isOpen ? 'Close' : 'Open'} the door`, run: () => this.useDoor(door) };
     const radio = this.world.radios.findNear(position);
     if (!radio) return null;
@@ -322,7 +322,7 @@ export class Game {
     const door = this.world.doors.closedDoorAhead(this.monster.position, this.monster.nextCell);
     if (!door) return;
     this.monster.hold(MONSTER_DOOR_TIME);
-    this.world.doors.setOpen(door, true, MONSTER_DOOR_SWING);
+    this.world.doors.forceOpen(door); // jammed for a while: no shutting it in its face again and again
     this.audio.doorCreak(door.position);
   }
 

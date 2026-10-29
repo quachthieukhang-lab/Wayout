@@ -12,7 +12,7 @@ export class Input {
     });
     target.addEventListener('keyup', (e) => this.keys.delete(e.code));
     target.addEventListener('mousedown', (e) => this.pressed.add(`Mouse${e.button}`));
-    window.addEventListener('blur', () => this.keys.clear());
+    target.addEventListener('blur', () => this.keys.clear()); // keys released while the tab was away never send keyup
   }
 
   isDown(...codes) {

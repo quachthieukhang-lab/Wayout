@@ -7,12 +7,14 @@ const OPEN_ANGLE = Math.PI * 0.47; // leaves swing almost flat against the doorw
 const SWING_SPEED = 5; // rad/s
 const REACH = 2.1; // how close the player must stand to use a door (m)
 const MONSTER_REACH = 2.2; // it stops this far from a closed door on its path and forces it
-const CLEARANCE = 0.9; // a door will not close on anyone standing this close to it
+const CLEARANCE = 0.6; // a door will not close on anyone this close to its leaves (m, player radius plus a margin)
+export const JAM_TIME = 10; // s a door the monster forced stays stuck open
+const FORCED_SWING_SPEED = 1.6; // rad/s, slower than a hand on the handle
 
 /**
  * @typedef {{
  *   cell: import('../level/level.js').Cell, position: THREE.Vector3, isOpen: boolean, swingSpeed: number,
- *   pivots: THREE.Object3D[], collider: THREE.Box3,
+ *   jamTimer: number, pivots: THREE.Object3D[], collider: THREE.Box3,
  * }} Door
  */
 
@@ -29,6 +31,12 @@ export function createDoors(scene, colliders, level) {
 
   /** @param {Door} door @param {{ x: number, z: number }} position */
   const distanceTo = (door, position) => Math.hypot(position.x - door.position.x, position.z - door.position.z);
+  /** How far from the closed leaves, which span the whole doorway. @param {Door} door @param {{ x: number, z: number }} position */
+  const distanceToLeaves = ({ collider: { min, max } }, position) =>
+    Math.hypot(
+      Math.max(min.x - position.x, 0, position.x - max.x),
+      Math.max(min.z - position.z, 0, position.z - max.z),
+    );
 
   return {
     doors,
@@ -36,6 +44,7 @@ export function createDoors(scene, colliders, level) {
     /** Swings the leaves toward open or shut. @param {number} dt */
     update(dt) {
       for (const door of doors) {
+        door.jamTimer = Math.max(door.jamTimer - dt, 0);
         const target = door.isOpen ? OPEN_ANGLE : 0;
         door.pivots.forEach((pivot, side) => {
           const angle = Math.abs(pivot.rotation.y);
@@ -57,7 +66,7 @@ export function createDoors(scene, colliders, level) {
     },
 
     /** Someone stands in the way of closing it. @param {Door} door @param {{ x: number, z: number }} position */
-    isBlocked: (door, position) => distanceTo(door, position) < CLEARANCE,
+    isBlocked: (door, position) => distanceToLeaves(door, position) < CLEARANCE,
 
     /** @param {Door} door @param {boolean} isOpen @param {number} [swingSpeed] how fast it swings (rad/s) */
     setOpen(door, isOpen, swingSpeed = SWING_SPEED) {
@@ -68,6 +77,12 @@ export function createDoors(scene, colliders, level) {
       const index = colliders.indexOf(door.collider);
       if (isOpen && index >= 0) colliders.splice(index, 1);
       if (!isOpen && index < 0) colliders.push(door.collider);
+    },
+
+    /** The monster shoves it open, slowly, and it stays stuck open for a while. @param {Door} door */
+    forceOpen(door) {
+      this.setOpen(door, true, FORCED_SWING_SPEED);
+      door.jamTimer = JAM_TIME;
     },
 
     /**
@@ -122,5 +137,13 @@ function buildDoor(scene, level, cell, material) {
     new THREE.Vector3(x - halfX, 0, z - halfZ),
     new THREE.Vector3(x + halfX, WALL_HEIGHT, z + halfZ),
   );
-  return { cell, position: new THREE.Vector3(x, 0, z), isOpen: true, swingSpeed: SWING_SPEED, pivots, collider };
+  return {
+    cell,
+    position: new THREE.Vector3(x, 0, z),
+    isOpen: true,
+    swingSpeed: SWING_SPEED,
+    jamTimer: 0,
+    pivots,
+    collider,
+  };
 }

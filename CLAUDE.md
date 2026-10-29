@@ -12,6 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run dev                          # Vite dev server on http://localhost:5173 (vite.config.js: host true, opens browser)
 npm run build                        # production build into dist/
 npm test                             # vitest run (all tests)
+npm run coverage                     # tests + per-module coverage table (@vitest/coverage-v8)
 npx vitest run test/monster.test.js  # one file
 npx vitest run -t "drags out"        # tests whose name matches
 npm run check                        # lint (ESLint) + typecheck (tsc on JSDoc, files stay .js) + Prettier check + tests
@@ -80,8 +81,8 @@ The settings form is a list of sections (Gameplay, Audio, Controls, Display; `.s
 
 ## Deploy
 
-Static site: `npm run build` → `dist/`. `netlify.toml` sets the build command, publish directory and Node version.
+Static site: `npm run build` → `dist/`. `netlify.toml` sets the build command, publish directory and Node version. Deploys go out from this machine with the Netlify CLI (project `wayout-khangqt`): `npm run deploy` runs `check`, builds and uploads `dist/` to production. The one-time `npx netlify-cli login` + `npx netlify-cli link --name wayout-khangqt` store the link in `.netlify/` (git-ignored).
 
 ## Tests
 
-Vitest in a Node environment (no DOM/WebGL). Tests cover the pure logic: `level.test.js` (parsing, pathfinding, line of sight, main-map reachability, rooms), `scatter.test.js` (random placement over seeds via `seedrandom`), `player.test.js` (movement, stamina, noise via a fake input `{ keys: Set }`), `monster.test.js` (AI behaviour on small ASCII maps with a seeded RNG, thrown noises, difficulty, plus the flashlight), `throwables.test.js` (cannon-es flights against a floor and a wall), `tutorial.test.js` (tutorial map, steps, monster staging), `key-sense.test.js`, `settings.test.js`. Modules that touch `document` (hud, textures, world, audio) are not unit-tested. Keep them out of the imports of tested modules.
+Vitest in a Node environment (no DOM/WebGL). Tests cover the pure logic: `level.test.js` (parsing, pathfinding, line of sight, main-map reachability, rooms), `scatter.test.js` (random placement over seeds via `seedrandom`), `player.test.js` (movement, stamina, noise via a fake input `{ keys: Set }`), `monster.test.js` (AI behaviour on small ASCII maps with a seeded RNG, thrown noises, difficulty, plus the flashlight), `throwables.test.js` (cannon-es flights against a floor and a wall), `tutorial.test.js` (tutorial map, steps, monster staging), `interactables.test.js` (doors, radios, noisy floors), `pickups.test.js`, `input.test.js` (events on a plain `EventTarget`), `key-sense.test.js`, `settings.test.js`, and `game.test.js`: the rules (keys and exit, doors and jams, radios, floors, grab / break free / death, tutorial retry, the frame loop) on a small map with the real player, monster, doors, radios and pickups, and `inert()` Proxy stubs for the HUD, audio and arms. Modules that touch `document` (hud, textures, world, audio) are not unit-tested. Keep them out of the imports of tested modules.
