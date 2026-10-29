@@ -197,6 +197,7 @@ export class Game {
     this.handleInteraction();
     this.bag.handleInput(this.hidingSpot !== null);
     this.bag.update(dt);
+    this.viewModel.hold(this.bag.inventory.selectedItem);
     this.updateKeySense(dt);
     this.updateRadios(dt);
     this.updateMonsterAtDoors();

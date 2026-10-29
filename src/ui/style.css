@@ -2,7 +2,7 @@
   --blood: #8a0b0b;
   --text: #d8d2c4;
   --panel: rgba(8, 6, 6, 0.92);
-  --title-font: 'Grenze Gotisch', Georgia, serif;
+  --title-font: 'Oswald', 'Segoe UI', Arial, sans-serif;
   --hud-panel: rgba(8, 6, 6, 0.55);
   --hud-border: rgba(216, 210, 196, 0.16);
 }
@@ -19,7 +19,7 @@ body {
   height: 100%;
   overflow: hidden;
   background: #000;
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: system-ui, 'Segoe UI', Roboto, Arial, sans-serif;
   color: var(--text);
   -webkit-user-select: none; /* Safari */
   user-select: none;
@@ -435,7 +435,7 @@ body {
 .panel h1 {
   font-family: var(--title-font);
   font-size: 64px;
-  font-weight: 800;
+  font-weight: 700;
   color: var(--blood);
   letter-spacing: 2px;
   text-shadow: 0 0 18px rgba(200, 0, 0, 0.5);
@@ -770,7 +770,7 @@ kbd {
 /* The title font has no Vietnamese diacritics, so the author's name uses the body font. */
 .byline {
   margin: -6px 0 14px;
-  font-family: 'Times New Roman', Georgia, serif; /* Georgia lacks some Vietnamese letters: 'Thiếu' broke apart */
+  font-family: system-ui, 'Segoe UI', Roboto, Arial, sans-serif; /* has the Vietnamese letters ('Thiếu') */
   font-size: 15px;
   font-style: italic;
   letter-spacing: 1px;

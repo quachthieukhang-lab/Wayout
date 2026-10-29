@@ -112,7 +112,7 @@ export function createMessageTexture(text, rng) {
     (ctx, w, h) => {
       ctx.translate(w / 2, h / 2);
       ctx.rotate((rng() - 0.5) * 0.15);
-      ctx.font = 'bold 64px "Grenze Gotisch", Georgia, serif';
+      ctx.font = 'bold 64px "Oswald", "Segoe UI", Arial, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = 'rgba(110,0,0,0.9)';
