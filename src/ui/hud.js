@@ -1,5 +1,7 @@
 const TOAST_DURATION_MS = 3500;
+const NOTE_DURATION_MS = 14000; // long enough to read a journal page while moving
 const GRAIN_SIZE = 160;
+/** @typedef {'resume' | 'notes' | 'settings' | 'back' | 'restart' | 'exit' | 'skip'} PauseAction */
 const LOW_BATTERY = 0.2;
 const LOW_HEALTH = 0.3;
 const LOUD_NOISE = 0.5;
@@ -33,6 +35,12 @@ export function createHud() {
     pause: $('pause'),
     pauseMenu: $('pause-menu'),
     pauseSettings: $('pause-settings'),
+    pauseNotes: $('pause-notes'),
+    notesList: $('notes-list'),
+    notesEmpty: $('notes-empty'),
+    note: $('note'),
+    noteTitle: $('note-title'),
+    noteText: $('note-text'),
     settings: $('settings'),
     difficultyPicker: $('difficulty-picker'),
     resumeRetry: $('resume-retry'),
@@ -75,19 +83,22 @@ export function createHud() {
     apply(value);
   };
   let toastTimeout = 0;
+  let noteTimeout = 0;
   /** @type {(string | null)[]} what the slots held last time, so a newly filled one can light up */
   let lastSlots = [];
   let hasStarted = false; // after the first start, pausing shows the pause menu instead of the title screen
   // The settings form lives on the title screen; the pause menu borrows it while its Settings view is open.
   const settingsHome = { parent: el.settings.parentElement, next: el.settings.nextSibling };
 
-  /** @param {boolean} isOpen */
-  const showPauseSettings = (isOpen) => {
-    el.pauseMenu.classList.toggle('hidden', isOpen);
-    el.pauseSettings.classList.toggle('hidden', !isOpen);
-    if (isOpen) el.pauseSettings.prepend(el.settings);
+  /** @param {'menu' | 'settings' | 'notes'} view */
+  const showPauseView = (view) => {
+    el.pauseMenu.classList.toggle('hidden', view !== 'menu');
+    el.pauseSettings.classList.toggle('hidden', view !== 'settings');
+    el.pauseNotes.classList.toggle('hidden', view !== 'notes');
+    if (view === 'settings') el.pauseSettings.prepend(el.settings);
     else settingsHome.parent.insertBefore(el.settings, settingsHome.next);
   };
+  bindTitleTabs(el.overlay);
 
   return {
     overlay: el.overlay,
@@ -109,9 +120,10 @@ export function createHud() {
         if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       }
       el.overlay.classList.toggle('hidden', !isPaused || hasStarted);
+      el.hud.classList.toggle('hidden', !hasStarted); // nothing to show behind the title screen
       el.pause.classList.toggle('hidden', !isPaused || !hasStarted);
       el.resumeRetry.classList.add('hidden');
-      showPauseSettings(false);
+      showPauseView('menu');
     },
 
     /** The browser refused to capture the mouse (Chrome and Edge do for about a second after Esc). */
@@ -154,17 +166,16 @@ export function createHud() {
       el.objective.classList.add('new');
     },
 
-    /** @param {(action: 'resume' | 'settings' | 'back' | 'restart' | 'exit' | 'skip') => void} handler a pause-menu button was clicked */
+    /** @param {(action: PauseAction) => void} handler a pause-menu button was clicked */
     onMenuAction(handler) {
       el.pause.addEventListener('click', (event) => {
         const button = /** @type {HTMLElement | null} */ (
           /** @type {Element} */ (event.target).closest('[data-action]')
         );
         if (!button) return;
-        const action = /** @type {'resume' | 'settings' | 'back' | 'restart' | 'exit' | 'skip'} */ (
-          button.dataset.action
-        );
-        if (action === 'settings' || action === 'back') showPauseSettings(action === 'settings');
+        const action = /** @type {PauseAction} */ (button.dataset.action);
+        if (action === 'settings' || action === 'notes') showPauseView(action);
+        else if (action === 'back') showPauseView('menu');
         handler(action);
       });
     },
@@ -253,6 +264,29 @@ export function createHud() {
       toastTimeout = setTimeout(() => el.toast.classList.remove('visible'), TOAST_DURATION_MS);
     },
 
+    /**
+     * A journal page found on a key: shown for a while, then kept in the pause menu's Notes.
+     * @param {import('../core/story.js').StoryNote} note
+     */
+    showNote(note) {
+      el.noteTitle.textContent = note.title;
+      el.noteText.textContent = note.text;
+      el.note.classList.remove('hidden', 'visible');
+      void el.note.offsetWidth; // restart the fade-in
+      el.note.classList.add('visible');
+      clearTimeout(noteTimeout);
+      noteTimeout = setTimeout(() => el.note.classList.remove('visible'), NOTE_DURATION_MS);
+
+      const entry = document.createElement('article');
+      const title = document.createElement('h3');
+      title.textContent = note.title;
+      const text = document.createElement('p');
+      text.textContent = note.text;
+      entry.append(title, text);
+      el.notesList.append(entry);
+      el.notesEmpty.classList.add('hidden');
+    },
+
     /** Red full-screen flash (restarts the CSS animation). */
     flash() {
       el.flash.classList.remove('active');
@@ -265,6 +299,7 @@ export function createHud() {
       el.endTitle.textContent = title;
       el.endHint.textContent = hint;
       el.objective.classList.add('hidden');
+      el.note.classList.add('hidden');
       el.endText.textContent = text;
       el.endscreen.classList.toggle('win', isWin);
       el.endscreen.classList.remove('hidden');
@@ -274,6 +309,26 @@ export function createHud() {
       el.danger.style.opacity = '0';
     },
   };
+}
+
+/**
+ * Title screen: Story / Controls / Settings tabs, one page shown at a time.
+ * @param {HTMLElement} overlay
+ */
+function bindTitleTabs(overlay) {
+  const tabs = [...overlay.querySelectorAll('[data-tab]')];
+  const pages = [...overlay.querySelectorAll('[data-tab-page]')];
+  overlay.querySelector('.title-tabs')?.addEventListener('click', (event) => {
+    const tab = /** @type {HTMLElement | null} */ (/** @type {Element} */ (event.target).closest('[data-tab]'));
+    if (!tab) return;
+    tabs.forEach((other) => {
+      other.classList.toggle('selected', other === tab);
+      other.setAttribute('aria-selected', String(other === tab));
+    });
+    pages.forEach((page) => {
+      page.classList.toggle('hidden', /** @type {HTMLElement} */ (page).dataset.tabPage !== tab.dataset.tab);
+    });
+  });
 }
 
 /** One key outline per key in the level, filled in gold once found. */

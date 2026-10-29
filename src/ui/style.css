@@ -493,12 +493,185 @@ body {
   }
 }
 
-.controls {
-  list-style: none;
-  text-align: left;
+/* ---------- title screen: the pitch on the left, Story / Controls / Settings tabs on the right ---------- */
+.panel.title-panel {
+  width: min(1120px, 100%);
+  max-width: none;
   display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  column-gap: 36px;
+}
+
+.title-main {
+  align-self: center;
+}
+
+.title-side {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  padding-left: 32px;
+  border-left: 1px solid #2a0a0a;
+  text-align: left;
+  cursor: default;
+}
+
+.title-panel .credits {
+  grid-column: 1 / -1;
+  margin-top: 18px;
+}
+
+.title-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid #2a0a0a;
+}
+
+.title-tabs button {
+  padding: 6px 14px;
+  font-family: var(--title-font);
+  font-size: 21px;
+  color: var(--text);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  opacity: 0.5;
+  cursor: pointer;
+}
+
+.title-tabs button:hover,
+.title-tabs button:focus-visible {
+  opacity: 0.85;
+  outline: none;
+}
+
+.title-tabs button.selected {
+  opacity: 1;
+  border-bottom-color: var(--blood);
+}
+
+.lore p {
+  margin-bottom: 12px;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.lore .lore-rule {
+  margin-top: 6px;
+  font-family: var(--title-font);
+  font-size: 21px;
+  color: #c9a46a;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px 24px;
+  font-size: 13px;
+}
+
+.control-group h3,
+.notes-list h3,
+.note-title {
+  margin-bottom: 6px;
+  font-family: var(--title-font);
+  font-size: 18px;
+  font-weight: 500;
+  color: #c9a46a;
+}
+
+.control-group p {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  align-items: center;
   gap: 8px;
+  margin-bottom: 4px;
+}
+
+.control-group p > span {
+  white-space: nowrap;
+}
+
+.control-group kbd {
+  min-width: 20px;
+  margin-right: 1px;
+  padding: 2px 4px;
+}
+
+.control-group:last-child {
+  grid-column: 1 / -1; /* the bag's longer lines get the full width */
+}
+
+.tips {
+  display: grid;
+  gap: 6px;
+  padding-top: 12px;
+  border-top: 1px solid #2a0a0a;
+  list-style: none;
+  font-size: 12.5px;
+  line-height: 1.5;
+  opacity: 0.75;
+}
+
+.tips li::before {
+  content: '— ';
+}
+
+.title-side .settings {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.title-side .settings h2 {
+  display: none; /* the tab already says it */
+}
+
+/* ---------- journal pages: one comes with each key ---------- */
+.note {
+  position: fixed;
+  left: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: min(340px, calc(100vw - 40px));
+  padding: 14px 18px;
   font-size: 14px;
+  line-height: 1.55;
+  background: rgba(28, 22, 14, 0.85);
+  border-left: 3px solid #c9a46a;
+  box-shadow: 0 0 24px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  transition: opacity 0.8s;
+  pointer-events: none;
+}
+
+.note.visible {
+  opacity: 1;
+}
+
+.note-text {
+  font-style: italic;
+}
+
+.notes-list {
+  display: grid;
+  gap: 14px;
+  max-height: 55vh;
+  overflow-y: auto;
+  margin-bottom: 14px;
+  text-align: left;
+}
+
+.notes-list p {
+  font-size: 14px;
+  font-style: italic;
+  line-height: 1.55;
+}
+
+.notes-empty {
+  margin-bottom: 14px;
+  opacity: 0.7;
 }
 
 .tip {
@@ -693,8 +866,7 @@ kbd {
 
 /* Restarting: only the title, the loading bar and "click to play" */
 #overlay.quick .story,
-#overlay.quick .controls,
-#overlay.quick .settings,
+#overlay.quick .title-side,
 #overlay.quick .tip {
   display: none;
 }
@@ -877,8 +1049,36 @@ kbd {
   font-size: clamp(40px, 10vw, 64px);
 }
 
+/* The title screen stacks its two columns; a restart's compact title is one column anyway */
+@media (max-width: 860px) {
+  .panel.title-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .title-side {
+    margin-top: 18px;
+    padding: 18px 0 0;
+    border-left: 0;
+    border-top: 1px solid #2a0a0a;
+  }
+}
+
+#overlay.quick .panel.title-panel {
+  width: min(560px, 100%);
+  grid-template-columns: 1fr;
+}
+
 /* Narrow windows and phones: sliders get their own row, the HUD shrinks */
 @media (max-width: 640px) {
+  .note {
+    top: auto;
+    bottom: 190px;
+    left: 12px;
+    transform: none;
+    width: auto;
+    right: 12px;
+  }
+
   .settings label {
     grid-template-columns: 1fr auto;
     gap: 4px 10px;

@@ -5,6 +5,8 @@ import { Game, GameState } from '../src/core/game.js';
 import { Input } from '../src/core/input.js';
 import { Tutorial } from '../src/core/tutorial.js';
 import { DIFFICULTIES } from '../src/core/difficulty.js';
+import { STORY_NOTES } from '../src/core/story.js';
+import { KEY_COUNT } from '../src/level/scatter.js';
 import { Player } from '../src/player/player.js';
 import { Flashlight } from '../src/player/flashlight.js';
 import { Monster, MonsterState } from '../src/monster/monster.js';
@@ -27,7 +29,7 @@ const at = (cell) => {
 };
 
 /** A Game on MAP with the real rules, player, monster, doors, radios and pickups. */
-function setup({ tutorial = null, map = MAP } = {}) {
+function setup({ tutorial = null, map = MAP, hud = inert() } = {}) {
   const level = parseLevel(map);
   const scene = new THREE.Scene();
   const colliders = [];
@@ -56,7 +58,7 @@ function setup({ tutorial = null, map = MAP } = {}) {
     pickups: createPickups(scene, level),
     world,
     audio: inert(),
-    hud: inert(),
+    hud,
     tutorial,
   });
   return { game, level, player, monster, world, input, events };
@@ -92,6 +94,35 @@ describe('Game: keys and the exit', () => {
     game.checkEscape();
     expect(game.state).toBe(GameState.WON);
     expect(player.enabled).toBe(false);
+  });
+});
+
+describe('Game: the story', () => {
+  it('has one journal page for every key of a real run', () => {
+    expect(STORY_NOTES).toHaveLength(KEY_COUNT);
+  });
+
+  it('reveals the journal one page per key, in order, whichever key is found first', () => {
+    const showNote = vi.fn();
+    const { game } = setup({ hud: new Proxy({ showNote }, { get: (target, name) => target[name] ?? (() => {}) }) });
+    const [first, second] = game.pickups.items.filter((item) => item.type === PickupType.KEY);
+    game.pickUp(second);
+    game.pickUp(first);
+    expect(showNote.mock.calls.map(([note]) => note)).toEqual([STORY_NOTES[0], STORY_NOTES[1]]);
+  });
+
+  it('keeps the journal out of the tutorial', () => {
+    const showNote = vi.fn();
+    const tutorial = new Tutorial(
+      [],
+      [{ text: 'Test', checkpoint: { x: 1, z: 1 }, setup: () => {}, isDone: () => false }],
+    );
+    const { game } = setup({
+      tutorial,
+      hud: new Proxy({ showNote }, { get: (target, name) => target[name] ?? (() => {}) }),
+    });
+    game.pickUp(game.pickups.items.find((item) => item.type === PickupType.KEY));
+    expect(showNote).not.toHaveBeenCalled();
   });
 });
 

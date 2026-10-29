@@ -35,12 +35,16 @@
       <span id="objective-step"></span>
       <span id="objective-text"></span>
     </div>
+    <div id="note" class="note hidden" role="status">
+      <p id="note-title" class="note-title"></p>
+      <p id="note-text" class="note-text"></p>
+    </div>
     <div id="struggle" class="hidden">
       <div class="struggle-text">Mash <kbd>SPACE</kbd> to break free!</div>
       <div class="track"><div id="struggle-fill" class="fill"></div></div>
     </div>
 
-    <div id="hud">
+    <div id="hud" class="hidden">
       <div id="hud-keys" class="hud-keys" aria-label="Keys found">
         <span class="hud-label">Keys</span>
         <div id="hud-key-icons" class="key-icons"></div>
@@ -71,125 +75,196 @@
     </div>
 
     <div id="overlay">
-      <div class="panel">
-        <h1>Way Out</h1>
-        <p class="byline">A game by Quách Thiếu Khang</p>
-        <p class="story">
-          You wake up in an abandoned hospital. The emergency exit is locked by
-          <b>5 keys</b> scattered across its wards — never in the same place twice.<br />And you are <b>not alone</b>.
-          The eye at the top shows how close it is to noticing you.
-        </p>
-        <p class="hint" id="start-hint">Loading…</p>
-        <div id="loading-bar"><span id="loading-fill"></span></div>
-        <div id="difficulty-picker" class="difficulty-picker hidden">
-          <p class="picker-title">Choose your difficulty</p>
-          <button type="button" data-difficulty="easy">
-            <b>Easy</b><span>Slower, deafer monster. The battery lasts longer.</span>
-          </button>
-          <button type="button" data-difficulty="normal">
-            <b>Normal</b><span>The way it is meant to be played.</span>
-          </button>
-          <button type="button" data-difficulty="hard">
-            <b>Hard</b><span>Faster, sharper monster. The battery drains fast.</span>
-          </button>
-        </div>
-        <button type="button" id="tutorial-button" class="tutorial-button">New here? Play the tutorial</button>
-        <ul class="controls">
-          <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</li>
-          <li><kbd>Shift</kbd> Sprint — drains stamina, very loud</li>
-          <li><kbd>Z</kbd> Walk quietly (hold) — it can hear normal footsteps from 5 m</li>
-          <li><kbd>C</kbd> Crouch (hold) — sneak, and crawl through vents it cannot follow you into</li>
-          <li><kbd>F</kbd> Flashlight — when it is on, it can see you from farther away</li>
-          <li><kbd>Q</kbd> Flash burst — stuns it if it is in your beam (costs battery)</li>
-          <li><kbd>Space</kbd> (mash) Break free when it grabs you</li>
-          <li>
-            <kbd>R</kbd> Sense the nearest key — an arrow shows the way for a few seconds (then the exit, once it is
-            open)
-          </li>
-          <li><kbd>E</kbd> Pick up / hide in a locker — it will not find you unless it saw you get in</li>
-          <li>
-            <kbd>1</kbd>–<kbd>4</kbd> / <kbd>Wheel</kbd> Pick a slot in your bag — bottles, cans and spare batteries go
-            there
-          </li>
-          <li>
-            <kbd>G</kbd> / <kbd>Click</kbd> Use the selected item: throw a bottle or can (the noise lures it away;
-            bottles smash, cans can be picked up again) or put a battery in the flashlight
-          </li>
-          <li><kbd>X</kbd> Drop the selected item — with a full bag, <kbd>E</kbd> swaps it for what you look at</li>
-          <li>Crouch behind a bed and it cannot see you; shelves block its view</li>
-          <li>Broken glass and loose floorboards are loud: cross them crouched or walking quietly</li>
-          <li>
-            <kbd>E</kbd> also closes doors (it can force them, slowly and loudly) and switches on old radios that lure
-            it away
-          </li>
-          <li><kbd>Space</kbd> Jump</li>
-          <li><kbd>Esc</kbd> Pause menu</li>
-        </ul>
-        <form id="settings" class="settings" onsubmit="return false;">
-          <h2>Settings</h2>
-          <nav class="settings-menu" aria-label="Settings sections">
-            <button type="button" data-section="gameplay">Gameplay <span>Difficulty</span></button>
-            <button type="button" data-section="audio">Audio <span>Master volume, ambience</span></button>
-            <button type="button" data-section="controls">Controls <span>Mouse sensitivity, invert Y</span></button>
-            <button type="button" data-section="display">
-              Display <span>Field of view, brightness, quality</span>
+      <div class="panel title-panel">
+        <section class="title-main">
+          <h1>Way Out</h1>
+          <p class="byline">A game by Quách Thiếu Khang</p>
+          <p class="story">
+            You came to Hollow Pines Hospital for a story. You woke on a gurney, and the door behind you was chained.
+            The emergency exit takes <b>5 keys</b>, hidden across the wards — never in the same place twice.<br />And
+            you are <b>not alone</b>.
+          </p>
+          <p class="hint" id="start-hint">Loading…</p>
+          <div id="loading-bar"><span id="loading-fill"></span></div>
+          <div id="difficulty-picker" class="difficulty-picker hidden">
+            <p class="picker-title">Choose your difficulty</p>
+            <button type="button" data-difficulty="easy">
+              <b>Easy</b><span>Slower, deafer monster. The battery lasts longer.</span>
             </button>
-          </nav>
-          <fieldset class="settings-section hidden" data-section="gameplay">
-            <legend>Gameplay</legend>
-            <label
-              >Difficulty
-              <select data-setting="difficulty">
-                <option value="easy">Easy — slower, deafer monster; longer battery</option>
-                <option value="normal">Normal</option>
-                <option value="hard">Hard — faster, sharper monster; battery drains fast</option>
-              </select></label
-            >
-          </fieldset>
-          <fieldset class="settings-section hidden" data-section="audio">
-            <legend>Audio</legend>
-            <label
-              >Master volume <input type="range" min="0" max="1" step="0.05" data-setting="masterVolume" /><output
-                data-output="masterVolume"
-              ></output
-            ></label>
-            <label
-              >Ambience <input type="range" min="0" max="1" step="0.05" data-setting="ambienceVolume" /><output
-                data-output="ambienceVolume"
-              ></output
-            ></label>
-          </fieldset>
-          <fieldset class="settings-section hidden" data-section="controls">
-            <legend>Controls</legend>
-            <label
-              >Mouse sensitivity
-              <input type="range" min="0.2" max="3" step="0.05" data-setting="mouseSensitivity" /><output
-                data-output="mouseSensitivity"
-              ></output
-            ></label>
-            <label class="check">Invert mouse Y <input type="checkbox" data-setting="isYInverted" /></label>
-          </fieldset>
-          <fieldset class="settings-section hidden" data-section="display">
-            <legend>Display</legend>
-            <label
-              >Field of view <input type="range" min="60" max="100" step="1" data-setting="fov" /><output
-                data-output="fov"
-              ></output
-            ></label>
-            <label
-              >Brightness <input type="range" min="0.6" max="2" step="0.05" data-setting="brightness" /><output
-                data-output="brightness"
-              ></output
-            ></label>
-            <label class="check"
-              >High quality graphics (bloom, sharper image) — turn off if it stutters
-              <input type="checkbox" data-setting="isHighQuality"
-            /></label>
-          </fieldset>
-          <button type="button" class="settings-back hidden">‹ All settings</button>
-        </form>
-        <p class="touch-note">Way Out needs a keyboard and a mouse.</p>
-        <p class="tip">Headphones recommended — its footsteps tell you which way it is coming from.</p>
+            <button type="button" data-difficulty="normal">
+              <b>Normal</b><span>The way it is meant to be played.</span>
+            </button>
+            <button type="button" data-difficulty="hard">
+              <b>Hard</b><span>Faster, sharper monster. The battery drains fast.</span>
+            </button>
+          </div>
+          <button type="button" id="tutorial-button" class="tutorial-button">New here? Play the tutorial</button>
+          <p class="touch-note">Way Out needs a keyboard and a mouse.</p>
+          <p class="tip">Headphones recommended — its footsteps tell you which way it is coming from.</p>
+        </section>
+
+        <section class="title-side">
+          <div class="title-tabs" role="tablist">
+            <button type="button" role="tab" data-tab="story" class="selected">Story</button>
+            <button type="button" role="tab" data-tab="controls">Controls</button>
+            <button type="button" role="tab" data-tab="settings">Settings</button>
+          </div>
+          <div class="tab-page lore" data-tab-page="story">
+            <p>
+              <b>Hollow Pines Hospital</b> closed in 1987, after the night shift on Ward C never clocked out. The papers
+              called it a fire. There was no fire.
+            </p>
+            <p>
+              Thirty-nine years later you came looking for a story. You woke on a gurney with your flashlight still in
+              your hand. The chain on the door behind you is new.
+            </p>
+            <p>
+              Someone tied a page of a journal to every key of the emergency exit. Find them, and you will learn what is
+              walking the wards.
+            </p>
+            <p class="lore-rule">Find the five keys. Reach the exit. Do not let it smile at you.</p>
+          </div>
+          <div class="tab-page hidden" data-tab-page="controls">
+            <div class="controls">
+              <div class="control-group">
+                <h3>Move</h3>
+                <p>
+                  <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span
+                  ><span>Move</span>
+                </p>
+                <p>
+                  <span><kbd>Shift</kbd></span
+                  ><span>Sprint — very loud</span>
+                </p>
+                <p>
+                  <span><kbd>Z</kbd></span
+                  ><span>Walk quietly (hold)</span>
+                </p>
+                <p>
+                  <span><kbd>C</kbd></span
+                  ><span>Crouch, crawl into vents</span>
+                </p>
+                <p>
+                  <span><kbd>Space</kbd></span
+                  ><span>Jump</span>
+                </p>
+              </div>
+              <div class="control-group">
+                <h3>Survive</h3>
+                <p>
+                  <span><kbd>F</kbd></span
+                  ><span>Flashlight</span>
+                </p>
+                <p>
+                  <span><kbd>Q</kbd></span
+                  ><span>Flash burst — stuns it</span>
+                </p>
+                <p>
+                  <span><kbd>R</kbd></span
+                  ><span>Sense the nearest key</span>
+                </p>
+                <p>
+                  <span><kbd>E</kbd></span
+                  ><span>Pick up, hide, doors, radios</span>
+                </p>
+                <p>
+                  <span><kbd>Space</kbd></span
+                  ><span>Mash to break free</span>
+                </p>
+              </div>
+              <div class="control-group">
+                <h3>Bag</h3>
+                <p>
+                  <span><kbd>1</kbd>–<kbd>4</kbd></span
+                  ><span>Select a slot (or the wheel)</span>
+                </p>
+                <p>
+                  <span><kbd>G</kbd></span
+                  ><span>Throw, or put a battery in (or click)</span>
+                </p>
+                <p>
+                  <span><kbd>X</kbd></span
+                  ><span>Drop it (<kbd>E</kbd> swaps when full)</span>
+                </p>
+                <p>
+                  <span><kbd>Esc</kbd></span
+                  ><span>Pause menu</span>
+                </p>
+              </div>
+            </div>
+            <ul class="tips">
+              <li>The eye at the top shows how close it is to noticing you.</li>
+              <li>It hears footsteps from 5 m. Walk quietly or crouch; glass and boards are loud.</li>
+              <li>A lit flashlight lets it see you from farther away.</li>
+              <li>A locker hides you, unless it sees you climb in. It cannot follow you into vents.</li>
+            </ul>
+          </div>
+          <div class="tab-page hidden" data-tab-page="settings">
+            <form id="settings" class="settings" onsubmit="return false;">
+              <h2>Settings</h2>
+              <nav class="settings-menu" aria-label="Settings sections">
+                <button type="button" data-section="gameplay">Gameplay <span>Difficulty</span></button>
+                <button type="button" data-section="audio">Audio <span>Master volume, ambience</span></button>
+                <button type="button" data-section="controls">Controls <span>Mouse sensitivity, invert Y</span></button>
+                <button type="button" data-section="display">
+                  Display <span>Field of view, brightness, quality</span>
+                </button>
+              </nav>
+              <fieldset class="settings-section hidden" data-section="gameplay">
+                <legend>Gameplay</legend>
+                <label
+                  >Difficulty
+                  <select data-setting="difficulty">
+                    <option value="easy">Easy — slower, deafer monster; longer battery</option>
+                    <option value="normal">Normal</option>
+                    <option value="hard">Hard — faster, sharper monster; battery drains fast</option>
+                  </select></label
+                >
+              </fieldset>
+              <fieldset class="settings-section hidden" data-section="audio">
+                <legend>Audio</legend>
+                <label
+                  >Master volume <input type="range" min="0" max="1" step="0.05" data-setting="masterVolume" /><output
+                    data-output="masterVolume"
+                  ></output
+                ></label>
+                <label
+                  >Ambience <input type="range" min="0" max="1" step="0.05" data-setting="ambienceVolume" /><output
+                    data-output="ambienceVolume"
+                  ></output
+                ></label>
+              </fieldset>
+              <fieldset class="settings-section hidden" data-section="controls">
+                <legend>Controls</legend>
+                <label
+                  >Mouse sensitivity
+                  <input type="range" min="0.2" max="3" step="0.05" data-setting="mouseSensitivity" /><output
+                    data-output="mouseSensitivity"
+                  ></output
+                ></label>
+                <label class="check">Invert mouse Y <input type="checkbox" data-setting="isYInverted" /></label>
+              </fieldset>
+              <fieldset class="settings-section hidden" data-section="display">
+                <legend>Display</legend>
+                <label
+                  >Field of view <input type="range" min="60" max="100" step="1" data-setting="fov" /><output
+                    data-output="fov"
+                  ></output
+                ></label>
+                <label
+                  >Brightness <input type="range" min="0.6" max="2" step="0.05" data-setting="brightness" /><output
+                    data-output="brightness"
+                  ></output
+                ></label>
+                <label class="check"
+                  >High quality graphics (bloom, sharper image) — turn off if it stutters
+                  <input type="checkbox" data-setting="isHighQuality"
+                /></label>
+              </fieldset>
+              <button type="button" class="settings-back hidden">‹ All settings</button>
+            </form>
+          </div>
+        </section>
         <p class="credits">
           Monster model: "Smily horror monster" by Bento (sketchfab.com/gostbento) — CC BY 4.0<br />Hand model: "Rigged
           hand" by Elena FF (sketchfab.com/elenaferfor) — CC BY-SA 4.0
@@ -203,10 +278,16 @@
         <p id="resume-retry" class="hint hidden">The browser needs a moment. Click Resume again.</p>
         <div id="pause-menu" class="menu">
           <button type="button" data-action="resume">Resume</button>
+          <button type="button" data-action="notes">Notes</button>
           <button type="button" data-action="settings">Settings</button>
           <button type="button" data-action="restart">Restart</button>
           <button type="button" data-action="skip" id="skip-tutorial" class="hidden">Skip tutorial</button>
           <button type="button" data-action="exit">Exit to title</button>
+        </div>
+        <div id="pause-notes" class="hidden">
+          <p id="notes-empty" class="notes-empty">No notes yet. Every key carries a page.</p>
+          <div id="notes-list" class="notes-list"></div>
+          <button type="button" data-action="back" class="back">Back</button>
         </div>
         <div id="pause-settings" class="hidden">
           <button type="button" data-action="back" class="back">Back</button>

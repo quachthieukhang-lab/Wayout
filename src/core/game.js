@@ -10,6 +10,7 @@ import { PLAYER_CONFIG, PlayerState } from '../player/player.js';
 import { THROWABLE, THROW_SPEED, Throwing } from '../items/throwables.js';
 import { Inventory, INVENTORY_SLOTS } from '../items/inventory.js';
 import { DIFFICULTIES } from './difficulty.js';
+import { STORY_NOTES } from './story.js';
 
 export const GameState = Object.freeze({
   PLAYING: 'playing',
@@ -356,6 +357,7 @@ export class Game {
 
     this.keysFound++;
     this.monster.setRage(this.keysFound);
+    this.revealNote();
     if (this.keysFound === this.totalKeys) {
       this.openExit();
     } else if (this.keysFound > 1 && this.monster.distanceTo(this.player.position) < KEY_NOISE_RANGE) {
@@ -364,6 +366,13 @@ export class Game {
     } else {
       this.hud.toast(`Key ${this.keysFound}/${this.totalKeys}`);
     }
+  }
+
+  /** Each key carries the next page of Marrow's journal (not in the tutorial, which has its own objectives). */
+  revealNote() {
+    const note = STORY_NOTES[this.keysFound - 1];
+    if (this.tutorial || !note) return;
+    this.hud.showNote(note);
   }
 
   /** The bag is full: the selected item goes down where the new one lay. @param {import('../items/pickups.js').Pickup} item */

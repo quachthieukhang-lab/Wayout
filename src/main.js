@@ -131,7 +131,7 @@ hud.setQuickStart(launch !== null);
 hud.setTutorial(isTutorial);
 hud.overlay.addEventListener('click', (event) => {
   const target = /** @type {Element} */ (event.target);
-  if (!isReady || target.closest('#settings')) return; // adjusting a slider must not start the game
+  if (!isReady || target.closest('.title-side')) return; // switching tabs or moving a slider must not start the game
   if (target.closest('#tutorial-button')) {
     reload('tutorial');
     return;
