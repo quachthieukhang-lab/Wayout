@@ -33,6 +33,17 @@ describe('Input', () => {
     expect(input.wasPressed('Mouse2')).toBe(false);
   });
 
+  it('reports wheel turns as WheelUp and WheelDown', () => {
+    const target = new EventTarget();
+    const input = new Input(target);
+    target.dispatchEvent(Object.assign(new Event('wheel'), { deltaY: -120 }));
+    expect(input.wasPressed('WheelUp')).toBe(true);
+    expect(input.wasPressed('WheelDown')).toBe(false);
+    input.endFrame();
+    target.dispatchEvent(Object.assign(new Event('wheel'), { deltaY: 0 })); // sideways scroll
+    expect(input.wasPressed('WheelUp', 'WheelDown')).toBe(false);
+  });
+
   it('keeps Space from scrolling the page', () => {
     const target = new EventTarget();
     new Input(target);

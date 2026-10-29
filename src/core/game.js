@@ -5,9 +5,10 @@ import { RADIO_NOISE } from '../world/radios.js';
 import { KeySense } from '../items/key-sense.js';
 import { hasLineOfSight } from '../level/pathfinding.js';
 import { MonsterState } from '../monster/monster.js';
-import { PickupType, isThrowable } from '../items/pickups.js';
+import { PickupType } from '../items/pickups.js';
 import { PLAYER_CONFIG, PlayerState } from '../player/player.js';
 import { THROWABLE, THROW_SPEED, Throwing } from '../items/throwables.js';
+import { Inventory, INVENTORY_SLOTS } from '../items/inventory.js';
 import { DIFFICULTIES } from './difficulty.js';
 
 export const GameState = Object.freeze({
@@ -19,6 +20,7 @@ export const GameState = Object.freeze({
 });
 
 const BATTERY_RECHARGE = 0.45;
+const FULL_BATTERY = 0.99; // a fresh battery would be wasted above this
 const DANGER_RANGE = 16;
 const CHASE_MIN_DANGER = 0.35;
 const MONSTER_HEARING_RANGE = 24;
@@ -36,7 +38,17 @@ const HEALTH_REGEN = 2; // per second, once safe
 const REGEN_DELAY = 8; // seconds without damage before regenerating
 
 const KEY_NOISE_RANGE = 18; // how far the clink of a picked-up key carries
-const THROW_KEYS = ['KeyG', 'Mouse0'];
+const USE_KEYS = ['KeyG', 'Mouse0']; // throw the selected bottle or can, or put the selected battery in
+const DROP_KEY = 'KeyX';
+const DROP_AHEAD = 0.3; // m in front of the feet: less than the player's radius, so never inside a wall
+const DROP_VOLUME = 0.15;
+const SLOT_KEYS = Array.from({ length: INVENTORY_SLOTS }, (_, i) => `Digit${i + 1}`);
+/** Shown the first time each kind of item goes in the bag. */
+const ITEM_TIPS = Object.freeze({
+  [PickupType.BOTTLE]: 'Picked up a bottle — press G or click to throw it and lure it away',
+  [PickupType.CAN]: 'Picked up a can — press G or click to throw it and lure it away',
+  [PickupType.BATTERY]: 'Battery in your bag — select it and press G or click to put it in the flashlight',
+});
 const MONSTER_DOOR_TIME = 1.4; // s it spends forcing a closed door
 const DOOR_NOISE = 6; // m a door the player swings can be heard
 const CAREFUL_FLOOR_VOLUME = 0.25; // glass and boards still whisper under a careful step
@@ -115,7 +127,8 @@ export class Game {
     this.keySense = new KeySense(deps.level);
     this.hasShownSenseTip = false;
     this.throwing = new Throwing(deps.world.scene, deps.world.colliders);
-    this.hasShownThrowTip = false;
+    this.inventory = new Inventory();
+    this.itemTips = new Set(); // item kinds whose use was already explained
     this.floorTips = new Set(); // noisy floor kinds already explained
     /** @type {import('./difficulty.js').Difficulty} */
     this.difficulty = DIFFICULTIES.normal;
@@ -182,7 +195,7 @@ export class Game {
     this.flashlight.update(dt);
     this.viewModel.setLensGlow(Math.min(this.flashlight.brightness, 1));
     this.handleInteraction();
-    this.handleThrowInput();
+    this.handleItemInput();
     this.updateThrown(dt);
     this.updateKeySense(dt);
     this.updateRadios(dt);
@@ -211,7 +224,7 @@ export class Game {
       alert: this.alertState,
       awareness: this.monster.state === MonsterState.CHASE ? 1 : this.monster.awareness,
       noise: this.hidingSpot ? 0 : Math.min(this.player.noiseRadius / LOUDEST_NOISE, 1),
-      carried: this.throwing.carried.map((item) => item.type),
+      inventory: { slots: this.inventory.slots.map((item) => item?.type ?? null), selected: this.inventory.selected },
     });
   }
 
@@ -275,8 +288,13 @@ export class Game {
   findInteraction() {
     const item = this.pickups.findTarget(this.camera);
     if (item) {
-      if (isThrowable(item) && !this.throwing.canCarryMore)
-        return { prompt: 'Your hands are full — throw something first' };
+      if (Inventory.accepts(item) && this.inventory.isFull) {
+        const held = this.inventory.selectedItem;
+        return {
+          prompt: `[E] Swap your ${held.type} for the ${this.pickups.label(item)}`,
+          run: () => this.swapFor(item),
+        };
+      }
       return { prompt: `[E] Pick up ${this.pickups.label(item)}`, run: () => this.pickUp(item) };
     }
     const position = this.player.position;
@@ -329,19 +347,10 @@ export class Game {
   pickUp(item) {
     this.pickups.take(item);
     this.audio.pickup();
-    if (item.type === PickupType.BATTERY) {
-      this.flashlight.recharge(BATTERY_RECHARGE);
-      this.hud.toast('Flashlight battery replaced');
-      return;
-    }
-    if (isThrowable(item)) {
-      this.throwing.carry(item);
-      this.hud.toast(
-        this.hasShownThrowTip
-          ? `Picked up a ${item.type}`
-          : `Picked up a ${item.type} — press G or click to throw it and lure it away`,
-      );
-      this.hasShownThrowTip = true;
+    if (Inventory.accepts(item)) {
+      this.inventory.add(item);
+      this.hud.toast(this.itemTips.has(item.type) ? `Picked up a ${item.type}` : ITEM_TIPS[item.type]);
+      this.itemTips.add(item.type);
       return;
     }
 
@@ -355,6 +364,14 @@ export class Game {
     } else {
       this.hud.toast(`Key ${this.keysFound}/${this.totalKeys}`);
     }
+  }
+
+  /** The bag is full: the selected item goes down where the new one lay. @param {import('../items/pickups.js').Pickup} item */
+  swapFor(item) {
+    const { x, z } = item.mesh.position;
+    const dropped = this.inventory.removeSelected();
+    this.pickUp(item); // into the slot just emptied
+    this.pickups.drop(dropped, { x, z });
   }
 
   openExit() {
@@ -432,12 +449,52 @@ export class Game {
     };
   }
 
-  // ---------- throwing: a bottle or can lands with a noise that draws it away ----------
+  // ---------- the bag: 1-4 or the wheel select a slot, G / click use it, X drops it ----------
 
-  handleThrowInput() {
-    if (this.hidingSpot || !this.input.wasPressed(...THROW_KEYS)) return;
-    if (this.throwing.throwFrom(this.camera, this.player.velocity)) this.audio.whoosh();
+  handleItemInput() {
+    const input = this.input;
+    const inventory = this.inventory;
+    SLOT_KEYS.forEach((code, index) => {
+      if (input.wasPressed(code)) inventory.select(index);
+    });
+    if (input.wasPressed('WheelDown')) inventory.cycle(1);
+    if (input.wasPressed('WheelUp')) inventory.cycle(-1);
+    if (this.hidingSpot) return;
+    if (input.wasPressed(...USE_KEYS)) this.useSelected();
+    else if (input.wasPressed(DROP_KEY)) this.dropSelected();
   }
+
+  /** A bottle or can is thrown; a battery goes into the flashlight. */
+  useSelected() {
+    const item = this.inventory.selectedItem;
+    if (!item) return;
+    if (item.type === PickupType.BATTERY) {
+      if (this.flashlight.battery >= FULL_BATTERY) {
+        this.hud.toast('The flashlight is still full');
+        return;
+      }
+      this.inventory.removeSelected();
+      this.flashlight.recharge(BATTERY_RECHARGE);
+      this.audio.click();
+      this.hud.toast('Fresh battery in the flashlight');
+      return;
+    }
+    this.inventory.removeSelected();
+    this.throwing.throwFrom(item, this.camera, this.player.velocity);
+    this.audio.whoosh();
+  }
+
+  /** Sets the selected item down just in front of the feet, freeing the slot. */
+  dropSelected() {
+    const item = this.inventory.removeSelected();
+    if (!item) return;
+    const { position, yaw } = this.player;
+    const point = { x: position.x - Math.sin(yaw) * DROP_AHEAD, z: position.z - Math.cos(yaw) * DROP_AHEAD };
+    this.pickups.drop(item, point);
+    this.audio.clank(DROP_VOLUME, item.mesh.position);
+  }
+
+  // ---------- throwing: a bottle or can lands with a noise that draws it away ----------
 
   updateThrown(dt) {
     const { impacts, rested } = this.throwing.update(dt);

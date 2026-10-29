@@ -41,23 +41,32 @@
     </div>
 
     <div id="hud">
-      <div id="hud-keys"></div>
-      <div id="hud-carried" class="hidden"></div>
-      <div class="meter">
-        <span>Health</span>
-        <div class="track"><div id="hud-health" class="fill health"></div></div>
+      <div id="hud-keys" class="hud-keys" aria-label="Keys found">
+        <span class="hud-label">Keys</span>
+        <div id="hud-key-icons" class="key-icons"></div>
+        <span id="hud-key-count" class="key-count"></span>
       </div>
-      <div class="meter">
-        <span>Battery</span>
-        <div class="track"><div id="hud-battery" class="fill"></div></div>
+      <div class="hud-vitals">
+        <div class="meter meter-wide">
+          <span>Health</span>
+          <div class="track"><div id="hud-health" class="fill health"></div></div>
+        </div>
+        <div class="meter">
+          <span>Battery</span>
+          <div class="track"><div id="hud-battery" class="fill battery"></div></div>
+        </div>
+        <div class="meter">
+          <span>Stamina</span>
+          <div class="track"><div id="hud-stamina" class="fill"></div></div>
+        </div>
+        <div class="meter">
+          <span>Noise</span>
+          <div class="track"><div id="hud-noise" class="fill noise"></div></div>
+        </div>
       </div>
-      <div class="meter">
-        <span>Stamina</span>
-        <div class="track"><div id="hud-stamina" class="fill"></div></div>
-      </div>
-      <div class="meter">
-        <span>Noise</span>
-        <div class="track"><div id="hud-noise" class="fill noise"></div></div>
+      <div class="hud-bag">
+        <div id="hud-bag-action" class="bag-action hidden"></div>
+        <div id="hud-slots" class="slots"></div>
       </div>
     </div>
 
@@ -99,9 +108,14 @@
           </li>
           <li><kbd>E</kbd> Pick up / hide in a locker — it will not find you unless it saw you get in</li>
           <li>
-            <kbd>G</kbd> / <kbd>Click</kbd> Throw a bottle or can you picked up — the noise lures it away. Bottles are
-            loud and smash; cans are quieter but you can pick them up again
+            <kbd>1</kbd>–<kbd>4</kbd> / <kbd>Wheel</kbd> Pick a slot in your bag — bottles, cans and spare batteries go
+            there
           </li>
+          <li>
+            <kbd>G</kbd> / <kbd>Click</kbd> Use the selected item: throw a bottle or can (the noise lures it away;
+            bottles smash, cans can be picked up again) or put a battery in the flashlight
+          </li>
+          <li><kbd>X</kbd> Drop the selected item — with a full bag, <kbd>E</kbd> swaps it for what you look at</li>
           <li>Crouch behind a bed and it cannot see you; shelves block its view</li>
           <li>Broken glass and loose floorboards are loud: cross them crouched or walking quietly</li>
           <li>

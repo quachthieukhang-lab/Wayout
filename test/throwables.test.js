@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { PickupType } from '../src/items/pickups.js';
-import { Throwing, MAX_CARRIED } from '../src/items/throwables.js';
+import { Throwing } from '../src/items/throwables.js';
 
 const DT = 1 / 60;
 const STILL = new THREE.Vector3();
@@ -34,25 +34,10 @@ function simulate(throwing, seconds = 10) {
 }
 
 describe('Throwing', () => {
-  it('carries only a couple of items and throws the last one picked up first', () => {
-    const { throwing, camera, item } = setup();
-    const bottle = item(PickupType.BOTTLE);
-    const can = item(PickupType.CAN);
-    throwing.carry(bottle);
-    expect(throwing.canCarryMore).toBe(MAX_CARRIED > 1);
-    throwing.carry(can);
-    expect(throwing.canCarryMore).toBe(false);
-
-    expect(throwing.throwFrom(camera, STILL)).toBe(can);
-    expect(throwing.throwFrom(camera, STILL)).toBe(bottle);
-    expect(throwing.throwFrom(camera, STILL)).toBeNull(); // empty hands
-  });
-
   it('smashes a bottle on the wall with one loud impact and leaves nothing behind', () => {
     const { scene, throwing, camera, item } = setup();
     const bottle = item(PickupType.BOTTLE);
-    throwing.carry(bottle);
-    throwing.throwFrom(camera, STILL);
+    throwing.throwFrom(bottle, camera, STILL);
     expect(scene.children).toContain(bottle.mesh);
 
     const { impacts, rested } = simulate(throwing);
@@ -66,8 +51,7 @@ describe('Throwing', () => {
   it('bounces a can off the wall and lets it come to rest on the floor, ready to pick up again', () => {
     const { throwing, camera, item } = setup();
     const can = item(PickupType.CAN);
-    throwing.carry(can);
-    throwing.throwFrom(camera, STILL);
+    throwing.throwFrom(can, camera, STILL);
 
     const { impacts, rested } = simulate(throwing);
     expect(impacts[0].isFirst).toBe(true);
@@ -84,8 +68,7 @@ describe('Throwing', () => {
     camera.position.set(0, 1.7, 0);
     camera.updateMatrixWorld();
     const can = { type: PickupType.CAN, cell: { x: 0, z: 0 }, mesh: new THREE.Object3D(), phase: 0, isTaken: true };
-    throwing.carry(can);
-    throwing.throwFrom(camera, STILL);
+    throwing.throwFrom(can, camera, STILL);
 
     const { impacts, rested } = simulate(throwing);
     expect(impacts).toHaveLength(0);

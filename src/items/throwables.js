@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { PickupType, THROWABLE_SIZE } from './pickups.js';
 
-export const MAX_CARRIED = 2;
 export const THROW_SPEED = 12;
 export const MIN_IMPACT_SPEED = 1.2; // softer touches make no sound
 const THROW_LIFT = 2.5; // extra upward speed, so it flies in an arc
@@ -29,7 +28,7 @@ export const THROWABLE = Object.freeze({
  */
 
 /**
- * The bottles and cans the player carries, and the ones in the air. Flight, bounces and tumbling come from a
+ * Bottles and cans in the air (the ones carried sit in the player's Inventory). Flight, bounces and tumbling come from a
  * cannon-es world that mirrors the level's static colliders; it only steps while something is flying.
  */
 export class Throwing {
@@ -37,8 +36,6 @@ export class Throwing {
   constructor(scene, colliders) {
     this.scene = scene;
     this.colliders = colliders;
-    /** @type {Pickup[]} the last one is thrown first */
-    this.carried = [];
     /** @type {Flight[]} */
     this.flying = [];
 
@@ -53,24 +50,13 @@ export class Throwing {
     this._origin = new THREE.Vector3();
   }
 
-  get canCarryMore() {
-    return this.carried.length < MAX_CARRIED;
-  }
-
-  /** @param {Pickup} item already taken out of the world */
-  carry(item) {
-    this.carried.push(item);
-  }
-
   /**
-   * Throws the last item picked up along the view, adding the player's own movement.
+   * Throws a carried bottle or can along the view, adding the player's own movement.
+   * @param {Pickup} item taken out of the player's hands
    * @param {THREE.Camera} camera
    * @param {{ x: number, z: number }} playerVelocity
-   * @returns {Pickup | null} what was thrown, null with empty hands
    */
-  throwFrom(camera, playerVelocity) {
-    const item = this.carried.pop();
-    if (!item) return null;
+  throwFrom(item, camera, playerVelocity) {
     const direction = camera.getWorldDirection(this._direction);
     const origin = camera.getWorldPosition(this._origin).addScaledVector(direction, HAND_REACH);
     const { radius, height } = THROWABLE_SIZE[item.type];
@@ -99,7 +85,6 @@ export class Throwing {
 
     item.mesh.position.copy(origin);
     this.scene.add(item.mesh);
-    return item;
   }
 
   /**

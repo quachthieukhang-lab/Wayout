@@ -68,6 +68,13 @@ export function createPickups(scene, level) {
   const cameraDirection = new THREE.Vector3();
   const toItem = new THREE.Vector3();
 
+  /** Puts an item back in the world where its mesh is, so it can be picked up again. @param {Pickup} item */
+  const putBack = (item) => {
+    item.cell = worldToCell(item.mesh.position.x, item.mesh.position.z);
+    item.isTaken = false;
+    scene.add(item.mesh);
+  };
+
   return {
     items,
 
@@ -104,11 +111,18 @@ export function createPickups(scene, level) {
       scene.remove(item.mesh);
     },
 
-    /** Puts a thrown item back where it came to rest (its mesh is already there), so it can be picked up again. @param {Pickup} item */
-    putBack(item) {
-      item.cell = worldToCell(item.mesh.position.x, item.mesh.position.z);
-      item.isTaken = false;
-      scene.add(item.mesh);
+    /** A thrown item came to rest (its mesh is already there). */
+    putBack,
+
+    /**
+     * Lays an item from the bag back in the world at (x, z): a bottle or can upright on the floor, a battery hovering.
+     * @param {Pickup} item @param {{ x: number, z: number }} point
+     */
+    drop(item, point) {
+      const y = isThrowable(item) ? THROWABLE_SIZE[item.type].height / 2 : HOVER_HEIGHT;
+      item.mesh.position.set(point.x, y, point.z);
+      item.mesh.rotation.set(0, item.phase, 0);
+      putBack(item);
     },
 
     /** @param {Pickup} item */

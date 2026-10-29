@@ -1,5 +1,5 @@
 // Keyboard and mouse-button state: `isDown` for held keys, `wasPressed` for keys pressed this frame.
-// Mouse buttons are reported as `Mouse0` (left), `Mouse1`, `Mouse2`.
+// Mouse buttons are reported as `Mouse0` (left), `Mouse1`, `Mouse2`; wheel turns as `WheelUp` / `WheelDown`.
 export class Input {
   constructor(target = window) {
     this.keys = new Set();
@@ -12,6 +12,9 @@ export class Input {
     });
     target.addEventListener('keyup', (e) => this.keys.delete(e.code));
     target.addEventListener('mousedown', (e) => this.pressed.add(`Mouse${e.button}`));
+    target.addEventListener('wheel', (e) => {
+      if (e.deltaY !== 0) this.pressed.add(e.deltaY < 0 ? 'WheelUp' : 'WheelDown');
+    });
     target.addEventListener('blur', () => this.keys.clear()); // keys released while the tab was away never send keyup
   }
 

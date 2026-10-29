@@ -14,6 +14,8 @@ import { createRadios } from '../src/world/radios.js';
 
 // Two keys, a door between two rooms, glass and boards below the spawn, a radio next to the monster.
 const MAP = ['#######', '#PK#K.#', 'E..D.M#', '#GW#R.#', '#######'];
+// A battery and three throwables (bottle, can, bottle) next to the spawn, and a second battery.
+const BAG_MAP = ['########', '#PBOOOB#', 'E.....M#', '########'];
 const DT = 1 / 60;
 
 /** Takes any call and does nothing: the HUD, the sound and the arms play no part in the rules. */
@@ -25,12 +27,13 @@ const at = (cell) => {
 };
 
 /** A Game on MAP with the real rules, player, monster, doors, radios and pickups. */
-function setup({ tutorial = null } = {}) {
-  const level = parseLevel(MAP);
+function setup({ tutorial = null, map = MAP } = {}) {
+  const level = parseLevel(map);
   const scene = new THREE.Scene();
   const colliders = [];
   const camera = new THREE.PerspectiveCamera();
-  const input = new Input(new EventTarget());
+  const events = new EventTarget();
+  const input = new Input(events);
   const player = new Player(camera, colliders, input, at(level.spawn));
   const monster = new Monster(level, () => 0.5);
   const world = {
@@ -56,7 +59,7 @@ function setup({ tutorial = null } = {}) {
     hud: inert(),
     tutorial,
   });
-  return { game, level, player, monster, world, input };
+  return { game, level, player, monster, world, input, events };
 }
 
 afterEach(() => {
@@ -207,5 +210,94 @@ describe('Game: the frame loop', () => {
     game.setPaused(false);
     for (let i = 0; i < 30; i++) game.update(DT, i * DT);
     expect(player.position.z).toBeGreaterThan(start.z + 0.3);
+  });
+});
+
+describe('Game: the bag', () => {
+  const bagSetup = () => {
+    const context = setup({ map: BAG_MAP });
+    const items = context.game.pickups.items;
+    const [battery, spareBattery] = items.filter((item) => item.type === PickupType.BATTERY);
+    const [bottle, can, secondBottle] = items.filter((item) => item.type !== PickupType.BATTERY);
+    return { ...context, battery, spareBattery, bottle, can, secondBottle };
+  };
+  const press = (events, code) => {
+    events.dispatchEvent(Object.assign(new Event('keydown'), { code }));
+    events.dispatchEvent(Object.assign(new Event('keyup'), { code }));
+  };
+
+  it('puts a picked-up battery in the bag instead of recharging, and G puts it in the flashlight', () => {
+    const { game, battery } = bagSetup();
+    game.flashlight.battery = 0.3;
+    game.pickUp(battery);
+    expect(game.flashlight.battery).toBe(0.3);
+    expect(game.inventory.selectedItem).toBe(battery);
+
+    game.useSelected();
+    expect(game.flashlight.battery).toBeCloseTo(0.75, 5);
+    expect(game.inventory.selectedItem).toBeNull();
+  });
+
+  it('keeps the spare battery while the flashlight is still full', () => {
+    const { game, battery } = bagSetup();
+    game.pickUp(battery);
+    game.useSelected();
+    expect(game.inventory.selectedItem).toBe(battery);
+  });
+
+  it('drops the selected item just in front of the feet, where it can be picked up again', () => {
+    const { game, player, bottle } = bagSetup();
+    game.pickUp(bottle);
+    expect(bottle.isTaken).toBe(true);
+
+    game.dropSelected();
+    expect(game.inventory.slots.every((slot) => slot === null)).toBe(true);
+    expect(bottle.isTaken).toBe(false);
+    const offset = Math.hypot(bottle.mesh.position.x - player.position.x, bottle.mesh.position.z - player.position.z);
+    expect(offset).toBeCloseTo(0.3, 5);
+  });
+
+  it('with a full bag, offers to swap the selected item for the one looked at', () => {
+    const { game, battery, bottle, can, secondBottle, spareBattery } = bagSetup();
+    [battery, bottle, can, secondBottle].forEach((item) => game.pickUp(item));
+    expect(game.inventory.isFull).toBe(true);
+    const spot = { x: spareBattery.mesh.position.x, z: spareBattery.mesh.position.z };
+    vi.spyOn(game.pickups, 'findTarget').mockReturnValue(spareBattery);
+
+    const action = game.findInteraction();
+    expect(action?.prompt).toMatch(/Swap your bottle for the battery/);
+    action.run();
+    expect(game.inventory.selectedItem).toBe(spareBattery);
+    expect(secondBottle.isTaken).toBe(false);
+    expect(secondBottle.mesh.position.x).toBeCloseTo(spot.x, 5);
+    expect(secondBottle.mesh.position.z).toBeCloseTo(spot.z, 5);
+  });
+
+  it('never puts keys in the bag', () => {
+    const { game } = setup();
+    const [key] = game.pickups.items;
+    game.pickUp(key);
+    expect(game.keysFound).toBe(1);
+    expect(game.inventory.slots.every((slot) => slot === null)).toBe(true);
+  });
+
+  it('picks a slot with the number keys and the wheel, and throws what it holds with G', () => {
+    const { game, input, events, bottle, can } = bagSetup();
+    game.pickUp(bottle);
+    game.pickUp(can);
+    press(events, 'Digit1');
+    game.handleItemInput();
+    expect(game.inventory.selectedItem).toBe(bottle);
+    input.endFrame();
+
+    events.dispatchEvent(Object.assign(new Event('wheel'), { deltaY: 100 }));
+    game.handleItemInput();
+    expect(game.inventory.selectedItem).toBe(can);
+    input.endFrame();
+
+    press(events, 'KeyG');
+    game.handleItemInput();
+    expect(game.inventory.selectedItem).toBeNull();
+    expect(game.throwing.flying.map((flight) => flight.item)).toEqual([can]);
   });
 });

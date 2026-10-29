@@ -52,8 +52,8 @@ export const TUTORIAL_STEPS = Object.freeze([
     isDone: (state) => state.room === 'DARK ROOM',
   },
   {
-    text: 'Press F for the flashlight, then pick up the battery (E)',
-    tip: 'With the light on, it can see you from farther away.',
+    text: 'Press F for the flashlight, then pick up the battery (E). It goes in your bag',
+    tip: 'With the light on, it can see you from farther away. When it runs low, select the battery (1-4) and click.',
     checkpoint: { x: 17, z: 2 },
     setup: (monster) => monster.sleep(),
     isDone: (state) => state.batteriesTaken >= 1,
@@ -75,7 +75,7 @@ export const TUTORIAL_STEPS = Object.freeze([
     isDone: (state, flags) => flags.has('hid') && state.monsterState === 'patrol',
   },
   {
-    text: 'It guards the far door. Throw the bottle (G / click) away from it to lure it off, then slip past',
+    text: 'It guards the far door. Select the bottle (1-4) and throw it (G / click) away from it, then slip past',
     tip: 'Bottles smash loudly. Cans are quieter, but you can pick them up again.',
     checkpoint: { x: 21, z: 8 },
     setup: (monster, isRetry) => {

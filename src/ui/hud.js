@@ -10,8 +10,19 @@ const ALERT_LABELS = Object.freeze({
   hunted: 'HUNTING YOU',
   seen: 'SEEN',
 });
+const SVG_OPEN =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">';
+/** Line icons for what can sit in the bag, plus the key. Fixed strings, never built from input. */
+const ITEM_ICONS = Object.freeze({
+  bottle: `${SVG_OPEN}<path d="M10 2.5h4V7l2 3v10.5a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V10l2-3z"/><path d="M8 14h8"/></svg>`,
+  can: `${SVG_OPEN}<rect x="7" y="4" width="10" height="16" rx="2"/><path d="M7 7.5h10M7 16.5h10"/></svg>`,
+  battery: `${SVG_OPEN}<rect x="7.5" y="5" width="9" height="16" rx="1.5"/><path d="M10.5 3h3v2h-3z"/><path d="M12.8 9l-2 4h2.6l-2 4"/></svg>`,
+  key: `${SVG_OPEN}<circle cx="7" cy="12" r="3.5"/><path d="M10.5 12H21M17.5 12v3M20.5 12v2.5"/></svg>`,
+});
+/** What G / click does with the selected item. */
+const ITEM_ACTIONS = Object.freeze({ bottle: 'Throw', can: 'Throw', battery: 'Put in flashlight' });
 
-/** DOM HUD: keys, battery and stamina meters, prompts, screen effects and the start / end screens. */
+/** DOM HUD: keys, the vitals meters, the bag's slots, prompts, screen effects and the start / end screens. */
 export function createHud() {
   const $ = (id) => document.getElementById(id);
   const el = {
@@ -37,8 +48,10 @@ export function createHud() {
     health: $('hud-health'),
     struggle: $('struggle'),
     struggleFill: $('struggle-fill'),
-    keys: $('hud-keys'),
-    carried: $('hud-carried'),
+    keyIcons: $('hud-key-icons'),
+    keyCount: $('hud-key-count'),
+    slots: $('hud-slots'),
+    bagAction: $('hud-bag-action'),
     battery: $('hud-battery'),
     stamina: $('hud-stamina'),
     noise: $('hud-noise'),
@@ -62,6 +75,8 @@ export function createHud() {
     apply(value);
   };
   let toastTimeout = 0;
+  /** @type {(string | null)[]} what the slots held last time, so a newly filled one can light up */
+  let lastSlots = [];
   let hasStarted = false; // after the first start, pausing shows the pause menu instead of the title screen
   // The settings form lives on the title screen; the pause menu borrows it while its Settings view is open.
   const settingsHome = { parent: el.settings.parentElement, next: el.settings.nextSibling };
@@ -157,19 +172,33 @@ export function createHud() {
     /**
      * @param {{ health: number, keysFound: number, totalKeys: number, battery: number, stamina: number, isExhausted: boolean,
      *   danger: number, alert: 'hidden' | 'calm' | 'suspicious' | 'hunted' | 'seen', awareness: number, noise: number,
-     *   carried: string[] }} status `carried`: what the player holds, the last one is thrown first
+     *   inventory: { slots: (string | null)[], selected: number } }} status `inventory`: the item kind in each bag slot
      */
-    update({ health, keysFound, totalKeys, battery, stamina, isExhausted, danger, alert, awareness, noise, carried }) {
+    update({
+      health,
+      keysFound,
+      totalKeys,
+      battery,
+      stamina,
+      isExhausted,
+      danger,
+      alert,
+      awareness,
+      noise,
+      inventory,
+    }) {
       set('health', Math.round(health * 100), (percent) => {
         el.health.style.width = `${percent}%`;
         el.health.classList.toggle('low', health < LOW_HEALTH);
       });
-      set('keys', `Keys: ${keysFound}/${totalKeys}`, (text) => {
-        el.keys.textContent = text;
+      set('keys', `${keysFound}/${totalKeys}`, (text) => {
+        renderKeys(el.keyIcons, keysFound, totalKeys);
+        el.keyCount.textContent = text;
       });
-      set('carried', [...carried].reverse().join(' · '), (text) => {
-        el.carried.textContent = `[G] Throw: ${text}`;
-        el.carried.classList.toggle('hidden', text === '');
+      set('inventory', `${inventory.slots.join(',')}|${inventory.selected}`, () => {
+        renderSlots(el.slots, inventory, lastSlots);
+        lastSlots = [...inventory.slots];
+        renderBagAction(el.bagAction, inventory.slots[inventory.selected]);
       });
       set('battery', Math.round(battery * 100), (percent) => {
         el.battery.style.width = `${percent}%`;
@@ -245,6 +274,76 @@ export function createHud() {
       el.danger.style.opacity = '0';
     },
   };
+}
+
+/** One key outline per key in the level, filled in gold once found. */
+function renderKeys(container, found, total) {
+  if (container.childElementCount !== total) {
+    container.replaceChildren(
+      ...Array.from({ length: total }, () => {
+        const icon = document.createElement('span');
+        icon.className = 'key-icon';
+        icon.innerHTML = ITEM_ICONS.key;
+        return icon;
+      }),
+    );
+  }
+  [...container.children].forEach((icon, i) => icon.classList.toggle('found', i < found));
+}
+
+/**
+ * The bag as a row of boxes: slot number, item icon, the selected one outlined.
+ * @param {HTMLElement} container @param {{ slots: (string | null)[], selected: number }} inventory
+ * @param {(string | null)[]} previous the slots before this change
+ */
+function renderSlots(container, { slots, selected }, previous) {
+  if (container.childElementCount !== slots.length) {
+    container.replaceChildren(
+      ...slots.map((_, i) => {
+        const slot = document.createElement('div');
+        slot.className = 'slot';
+        const number = document.createElement('span');
+        number.className = 'slot-number';
+        number.textContent = String(i + 1);
+        const icon = document.createElement('span');
+        icon.className = 'slot-icon';
+        slot.append(number, icon);
+        return slot;
+      }),
+    );
+  }
+  slots.forEach((type, i) => {
+    const slot = /** @type {HTMLElement} */ (container.children[i]);
+    slot.classList.toggle('selected', i === selected);
+    slot.classList.toggle('filled', type !== null);
+    slot.title = type ?? '';
+    if (type === (previous[i] ?? null)) return;
+    slot.dataset.item = type ?? '';
+    /** @type {HTMLElement} */ (slot.lastElementChild).innerHTML = type ? ITEM_ICONS[type] : '';
+    if (!type) return;
+    slot.classList.remove('new');
+    void slot.offsetWidth; // restart the pop animation
+    slot.classList.add('new');
+  });
+}
+
+/** Above the bag: the selected item's name and what G / X do with it. @param {HTMLElement} line @param {string | null} type */
+function renderBagAction(line, type) {
+  line.classList.toggle('hidden', !type);
+  if (!type) return;
+  const label = (text) => {
+    const span = document.createElement('span');
+    span.textContent = text;
+    return span;
+  };
+  const key = (text) => {
+    const kbd = document.createElement('kbd');
+    kbd.textContent = text;
+    return kbd;
+  };
+  const name = label(type);
+  name.className = 'bag-item-name';
+  line.replaceChildren(name, key('G'), label(ITEM_ACTIONS[type]), key('X'), label('Drop'));
 }
 
 /** Static film-grain tile; CSS animates its position. */
