@@ -1204,3 +1204,114 @@ kbd {
   scrollbar-width: thin;
   scrollbar-color: #4a1414 transparent;
 }
+
+/* ---------- journal count, floor plan, frame rate ---------- */
+.hud-pages {
+  position: absolute;
+  top: 64px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 12px;
+  background: var(--hud-panel);
+  border: 1px solid var(--hud-border);
+  color: #c9a46a;
+}
+
+.map {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-width: calc(100vw - 32px);
+  padding: 10px;
+  background: #1a1612;
+  border: 1px solid #5a4a36;
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+}
+
+.map canvas {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 90px);
+  opacity: 0.94;
+}
+
+.map-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  text-align: center;
+  opacity: 0.7;
+}
+
+.fps {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  padding: 2px 6px;
+  font:
+    12px/1.4 ui-monospace,
+    Consolas,
+    monospace;
+  background: rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+.records {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #c9a46a;
+  opacity: 0.85;
+}
+
+/* ---------- end screen: stats, record badge, a tip after a death ---------- */
+.end-badge {
+  margin-bottom: 8px;
+  font-family: var(--title-font);
+  font-size: 22px;
+  color: #e0c070;
+}
+
+.end-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+  margin: 16px 0 4px;
+}
+
+.end-stats div {
+  padding: 6px 8px;
+  border: 1px solid #2a0a0a;
+}
+
+.end-stats dt {
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  opacity: 0.65;
+}
+
+.end-stats dd {
+  font-size: 18px;
+}
+
+.end-tip {
+  margin-top: 12px;
+  font-size: 14px;
+  font-style: italic;
+  color: #c9a46a;
+}
+
+/* Tapes read like a transcript, not a journal page. */
+.note.tape,
+.notes-list article.tape {
+  border-left-color: #7fa9c9;
+}
+
+.note.tape .note-text {
+  font-family: ui-monospace, Consolas, monospace;
+  font-style: normal;
+  font-size: 13px;
+}

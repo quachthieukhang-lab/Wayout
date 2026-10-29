@@ -19,6 +19,7 @@ const SLEEP_TIME = 0.4;
 export const THROWABLE = Object.freeze({
   [PickupType.BOTTLE]: Object.freeze({ noiseRadius: 20, breaks: true, mass: 0.45 }),
   [PickupType.CAN]: Object.freeze({ noiseRadius: 13, breaks: false, mass: 0.1 }), // quieter, but reusable
+  [PickupType.FLARE]: Object.freeze({ noiseRadius: 6, breaks: false, mass: 0.2 }), // its light and hiss do the luring
 });
 
 /**

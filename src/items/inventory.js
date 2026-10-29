@@ -1,9 +1,18 @@
 import { PickupType } from './pickups.js';
 
 export const INVENTORY_SLOTS = 4;
+/** @type {Set<string>} what goes in the bag; keys are counted, and pages, tapes and the floor plan are used on the spot */
+const BAG_TYPES = new Set([
+  PickupType.BATTERY,
+  PickupType.BOTTLE,
+  PickupType.CAN,
+  PickupType.FLARE,
+  PickupType.BANDAGE,
+]);
 
 /**
- * The player's bag: a few slots for bottles, cans and spare batteries (keys are counted apart and never take a slot).
+ * The player's bag: a few slots for bottles, cans, flares, bandages and spare batteries (keys are counted apart and
+ * never take a slot).
  * One slot is selected; G / click uses what is in it, X drops it.
  */
 export class Inventory {
@@ -15,7 +24,7 @@ export class Inventory {
 
   /** @param {import('./pickups.js').Pickup} item */
   static accepts(item) {
-    return item.type !== PickupType.KEY;
+    return BAG_TYPES.has(item.type);
   }
 
   get isFull() {

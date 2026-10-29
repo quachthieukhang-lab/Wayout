@@ -24,6 +24,8 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,glb}'],
+        // The crash-report SDK loads only for players who have reports on, and only online anyway.
+        globIgnores: ['**/sentry-sdk-*.js'],
       },
     }),
   ],

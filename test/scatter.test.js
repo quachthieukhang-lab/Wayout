@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import seedrandom from 'seedrandom';
-import { LEVEL_MAP, parseLevel, isWalkable } from '../src/level/level.js';
+import { LEVEL_MAP, ROOMS, MARROW_OFFICE, parseLevel, roomAt, isWalkable } from '../src/level/level.js';
 import { findPath } from '../src/level/pathfinding.js';
 import {
   scatterItems,
@@ -9,6 +9,11 @@ import {
   KEY_MIN_WALK,
   THROWABLE_COUNT,
   STARTER_WALK,
+  PAGE_COUNT,
+  TAPE_COUNT,
+  BANDAGE_COUNT,
+  FLARE_COUNT,
+  MAP_WALK,
 } from '../src/level/scatter.js';
 
 const level = parseLevel(LEVEL_MAP);
@@ -54,5 +59,24 @@ describe('scatterItems', () => {
     const before = JSON.stringify(level);
     scatterItems(level, seedrandom('x'));
     expect(JSON.stringify(level)).toBe(before);
+  });
+
+  it('scatters pages, tapes, a floor plan and supplies, each on its own reachable cell', () => {
+    const office = ROOMS.find((room) => room.name === MARROW_OFFICE);
+    for (const seed of SEEDS) {
+      const run = scatterItems(level, seedrandom(seed), { tapeRoom: office });
+      expect(run.pages).toHaveLength(PAGE_COUNT);
+      expect(run.tapes).toHaveLength(TAPE_COUNT);
+      expect(run.bandages).toHaveLength(BANDAGE_COUNT);
+      expect(run.flares).toHaveLength(FLARE_COUNT);
+      expect(run.maps).toHaveLength(1);
+      expect(walk(run.maps[0])).toBeGreaterThanOrEqual(MAP_WALK.min);
+      expect(walk(run.maps[0])).toBeLessThanOrEqual(MAP_WALK.max);
+      expect(roomAt([office], run.tapes.at(-1))).not.toBeNull(); // Marrow's own tape, in his office
+
+      const all = [run.keys, run.throwables, run.pages, run.tapes, run.maps, run.bandages, run.flares].flat();
+      all.forEach((cell) => expect(walk(cell)).toBeLessThan(Infinity));
+      expect(new Set(all.map((cell) => `${cell.x},${cell.z}`)).size).toBe(all.length);
+    }
   });
 });

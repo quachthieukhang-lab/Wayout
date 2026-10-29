@@ -19,6 +19,7 @@
     "models": "gltf-transform optimize model-originals/hand.glb public/models/hand.glb --compress meshopt --texture-compress webp --texture-size 1024 --simplify false --join false --flatten false --instance false --palette false --resample false && gltf-transform optimize model-originals/monster.glb public/models/monster.glb --compress meshopt --texture-compress webp --texture-size 1024 --simplify false --join false --flatten false --instance false --palette false --resample false"
   },
   "dependencies": {
+    "@sentry/browser": "^11.10.0",
     "@tweenjs/tween.js": "^25.0.0",
     "cannon-es": "^0.20.0",
     "postprocessing": "^6.39.5",

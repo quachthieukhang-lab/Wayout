@@ -39,6 +39,11 @@
       <p id="note-title" class="note-title"></p>
       <p id="note-text" class="note-text"></p>
     </div>
+    <div id="map" class="map hidden" aria-label="Floor plan">
+      <canvas id="map-canvas"></canvas>
+      <p class="map-hint"><kbd>M</kbd> close the plan — it does not stop the clock</p>
+    </div>
+    <div id="fps" class="fps hidden" aria-hidden="true"></div>
     <div id="struggle" class="hidden">
       <div class="struggle-text">Mash <kbd>SPACE</kbd> to break free!</div>
       <div class="track"><div id="struggle-fill" class="fill"></div></div>
@@ -49,6 +54,10 @@
         <span class="hud-label">Keys</span>
         <div id="hud-key-icons" class="key-icons"></div>
         <span id="hud-key-count" class="key-count"></span>
+      </div>
+      <div id="hud-pages" class="hud-pages hidden" aria-label="Journal pages found">
+        <span class="hud-label">Journal</span>
+        <span id="hud-page-count" class="key-count"></span>
       </div>
       <div class="hud-vitals">
         <div class="meter meter-wide">
@@ -84,6 +93,7 @@
             The emergency exit takes <b>5 keys</b>, hidden across the wards — never in the same place twice.<br />And
             you are <b>not alone</b>.
           </p>
+          <p id="records" class="records hidden"></p>
           <p class="hint" id="start-hint">Loading…</p>
           <div id="loading-bar"><span id="loading-fill"></span></div>
           <div id="difficulty-picker" class="difficulty-picker hidden">
@@ -119,8 +129,8 @@
               your hand. The chain on the door behind you is new.
             </p>
             <p>
-              Someone tied a page of a journal to every key of the emergency exit. Find them, and you will learn what is
-              walking the wards.
+              Pages of a doctor's journal lie scattered across the wards, and old tapes still sit where they were
+              dropped. Read enough of them and you will learn what is walking the wards, and how this ends.
             </p>
             <p class="lore-rule">Find the five keys. Reach the exit. Do not let it smile at you.</p>
           </div>
@@ -171,6 +181,10 @@
                   <span><kbd>Space</kbd></span
                   ><span>Mash to break free</span>
                 </p>
+                <p>
+                  <span><kbd>M</kbd></span
+                  ><span>Floor plan, once found</span>
+                </p>
               </div>
               <div class="control-group">
                 <h3>Bag</h3>
@@ -180,7 +194,7 @@
                 </p>
                 <p>
                   <span><kbd>G</kbd></span
-                  ><span>Throw, or put a battery in (or click)</span>
+                  ><span>Throw, bandage, battery in (or click)</span>
                 </p>
                 <p>
                   <span><kbd>X</kbd></span
@@ -197,17 +211,20 @@
               <li>It hears footsteps from 5 m. Walk quietly or crouch; glass and boards are loud.</li>
               <li>A lit flashlight lets it see you from farther away.</li>
               <li>A locker hides you, unless it sees you climb in. It cannot follow you into vents.</li>
+              <li>It learns as you take keys. A lit flare draws it in, and blinds it if it gets too close.</li>
             </ul>
           </div>
           <div class="tab-page hidden" data-tab-page="settings">
             <form id="settings" class="settings" onsubmit="return false;">
               <h2>Settings</h2>
               <nav class="settings-menu" aria-label="Settings sections">
-                <button type="button" data-section="gameplay">Gameplay <span>Difficulty</span></button>
+                <button type="button" data-section="gameplay">
+                  Gameplay <span>Difficulty, full screen, crash reports</span>
+                </button>
                 <button type="button" data-section="audio">Audio <span>Master volume, ambience</span></button>
                 <button type="button" data-section="controls">Controls <span>Mouse sensitivity, invert Y</span></button>
                 <button type="button" data-section="display">
-                  Display <span>Field of view, brightness, quality</span>
+                  Display <span>Field of view, brightness, graphics, FPS</span>
                 </button>
               </nav>
               <fieldset class="settings-section hidden" data-section="gameplay">
@@ -220,6 +237,14 @@
                     <option value="hard">Hard — faster, sharper monster; battery drains fast</option>
                   </select></label
                 >
+                <label class="check"
+                  >Full screen while playing — in Chrome and Edge it also stops Ctrl+W and Ctrl+Tab from closing the
+                  game <input type="checkbox" data-setting="isFullscreen"
+                /></label>
+                <label class="check"
+                  >Send anonymous crash reports (applies the next time the game starts)
+                  <input type="checkbox" data-setting="isErrorReportingOn"
+                /></label>
               </fieldset>
               <fieldset class="settings-section hidden" data-section="audio">
                 <legend>Audio</legend>
@@ -256,10 +281,15 @@
                     data-output="brightness"
                   ></output
                 ></label>
-                <label class="check"
-                  >High quality graphics (bloom, sharper image) — turn off if it stutters
-                  <input type="checkbox" data-setting="isHighQuality"
-                /></label>
+                <label
+                  >Graphics
+                  <select data-setting="graphics">
+                    <option value="high">High — bloom, sharp image, soft shadows</option>
+                    <option value="medium">Medium — no bloom, lighter shadows</option>
+                    <option value="low">Low — for weak laptops: lower resolution, no shadows</option>
+                  </select></label
+                >
+                <label class="check">Show frame rate (FPS) <input type="checkbox" data-setting="showFps" /></label>
               </fieldset>
               <button type="button" class="settings-back hidden">‹ All settings</button>
             </form>
@@ -286,7 +316,7 @@
           <button type="button" data-action="exit">Exit to title</button>
         </div>
         <div id="pause-notes" class="hidden">
-          <p id="notes-empty" class="notes-empty">No notes yet. Every key carries a page.</p>
+          <p id="notes-empty" class="notes-empty">No notes yet. Journal pages and old tapes lie around the wards.</p>
           <div id="notes-list" class="notes-list"></div>
           <button type="button" data-action="back" class="back">Back</button>
         </div>
@@ -299,7 +329,10 @@
     <div id="endscreen" class="hidden">
       <div class="panel">
         <h1 id="end-title"></h1>
+        <p id="end-badge" class="end-badge hidden"></p>
         <p id="end-text"></p>
+        <dl id="end-stats" class="end-stats"></dl>
+        <p id="end-tip" class="end-tip hidden"></p>
         <p class="hint" id="end-hint">Click to play again</p>
         <p class="byline">Way Out <span data-version></span> — a game by Quách Thiếu Khang</p>
       </div>

@@ -5,3 +5,8 @@ dist/
 
 # Netlify CLI link (local)
 .netlify/
+
+# Local environment (Sentry DSN)
+.env
+.env.local
+.env.*.local

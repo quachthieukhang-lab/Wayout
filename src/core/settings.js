@@ -2,10 +2,13 @@ import * as z from 'zod/mini'; // tree-shakable build of zod: a few kB instead o
 import { DIFFICULTY_NAMES } from './difficulty.js';
 
 const STORAGE_KEY = 'way-out-settings';
+export const GRAPHICS_LEVELS = /** @type {const} */ (['high', 'medium', 'low']);
 
 /**
+ * @typedef {typeof GRAPHICS_LEVELS[number]} GraphicsLevel
  * @typedef {{ difficulty: import('./difficulty.js').DifficultyName, masterVolume: number, ambienceVolume: number,
- *   mouseSensitivity: number, isYInverted: boolean, fov: number, brightness: number, isHighQuality: boolean }} Settings
+ *   mouseSensitivity: number, isYInverted: boolean, fov: number, brightness: number, graphics: GraphicsLevel,
+ *   showFps: boolean, isFullscreen: boolean, isErrorReportingOn: boolean }} Settings
  */
 
 /** @type {Readonly<Settings>} */
@@ -17,7 +20,10 @@ export const DEFAULT_SETTINGS = Object.freeze({
   isYInverted: false,
   fov: 75,
   brightness: 1.1,
-  isHighQuality: true,
+  graphics: 'high',
+  showFps: false,
+  isFullscreen: true,
+  isErrorReportingOn: true,
 });
 
 // Same ranges as the sliders in index.html. A missing, mistyped or out-of-range value falls back to its default
@@ -32,7 +38,10 @@ const SettingsSchema = z.object({
   isYInverted: flagOr(DEFAULT_SETTINGS.isYInverted),
   fov: rangeOr(60, 100, DEFAULT_SETTINGS.fov),
   brightness: rangeOr(0.6, 2, DEFAULT_SETTINGS.brightness),
-  isHighQuality: flagOr(DEFAULT_SETTINGS.isHighQuality),
+  graphics: z.catch(z.enum(GRAPHICS_LEVELS), DEFAULT_SETTINGS.graphics),
+  showFps: flagOr(DEFAULT_SETTINGS.showFps),
+  isFullscreen: flagOr(DEFAULT_SETTINGS.isFullscreen),
+  isErrorReportingOn: flagOr(DEFAULT_SETTINGS.isErrorReportingOn),
 });
 
 /**
@@ -41,7 +50,12 @@ const SettingsSchema = z.object({
  */
 export function parseSettings(saved) {
   const input = typeof saved === 'object' && saved !== null ? saved : {};
-  return /** @type {Settings} */ (SettingsSchema.parse(input)); // every field has a .catch, so none is ever missing
+  // Before v1.1 graphics was a High on/off switch; its "off" is what Medium is now.
+  const migrated =
+    !('graphics' in input) && 'isHighQuality' in input && input.isHighQuality === false
+      ? { ...input, graphics: 'medium' }
+      : input;
+  return /** @type {Settings} */ (SettingsSchema.parse(migrated)); // every field has a .catch, so none is ever missing
 }
 
 /** @returns {Settings} saved settings, falling back to defaults for anything missing or malformed */

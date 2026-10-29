@@ -1,4 +1,5 @@
-import { roomAt } from '../level/level.js';
+import * as THREE from 'three';
+import { roomAt, cellToWorld } from '../level/level.js';
 import { TUTORIAL_ROOMS } from '../level/tutorial-map.js';
 
 // Spots on TUTORIAL_MAP the steps stage the monster with.
@@ -145,4 +146,39 @@ export class Tutorial {
     this.flags = new Set();
     return this.step !== null;
   }
+}
+
+/**
+ * How tutorial steps stage the monster.
+ * @param {import('../monster/monster.js').Monster} monster
+ * @param {{ position: THREE.Vector3 }} player
+ * @param {{ growl: (position?: { x: number, z: number }) => void }} audio
+ * @returns {MonsterDirector}
+ */
+export function createMonsterDirector(monster, player, audio) {
+  const wake = () => monster.setDormant(false);
+  return {
+    sleep: () => monster.setDormant(true),
+    place: (cell) => {
+      wake();
+      monster.place(cell);
+    },
+    investigate: (cell, area) => {
+      wake();
+      monster.setPatrolArea(area);
+      const { x, z } = cellToWorld(cell);
+      monster.investigate(new THREE.Vector3(x, 0, z));
+    },
+    guard: (area) => {
+      wake();
+      monster.setPatrolArea(area);
+      monster.calm();
+    },
+    charge: (roarSeconds) => {
+      wake();
+      monster.setPatrolArea(null);
+      monster.alert(player.position, roarSeconds);
+      audio.growl(monster.position);
+    },
+  };
 }

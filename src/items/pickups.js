@@ -6,10 +6,22 @@ export const PickupType = Object.freeze({
   BATTERY: 'battery',
   BOTTLE: 'bottle', // throwables: carried, then thrown to make a noise somewhere else
   CAN: 'can',
+  FLARE: 'flare', // thrown too, and it burns: a light and a hiss that lure the monster, and dazzle it up close
+  BANDAGE: 'bandage', // restores health
+  PAGE: 'page', // a page of Marrow's journal: read at once, never carried
+  TAPE: 'tape', // a tape recorder: played at once, never carried
+  MAP: 'map', // the floor plan: M shows it from then on
 });
 
 /** @type {Set<string>} */
-const THROWABLE_TYPES = new Set([PickupType.BOTTLE, PickupType.CAN]);
+const THROWABLE_TYPES = new Set([PickupType.BOTTLE, PickupType.CAN, PickupType.FLARE]);
+/** @type {Set<string>} lie still on the floor instead of hovering and spinning */
+const FLOOR_TYPES = new Set([PickupType.BOTTLE, PickupType.CAN, PickupType.FLARE, PickupType.TAPE]);
+const LABELS = Object.freeze({
+  [PickupType.PAGE]: 'journal page',
+  [PickupType.TAPE]: 'tape recorder',
+  [PickupType.MAP]: 'floor plan',
+});
 const INTERACT_DISTANCE = 2.2;
 const INTERACT_MIN_DOT = 0.85; // how directly the player must look at the item
 const HOVER_HEIGHT = 1.0;
@@ -19,7 +31,9 @@ const FLOOR_SCATTER = 0.6; // throwables lie up to this far off their cell cente
 export const THROWABLE_SIZE = Object.freeze({
   [PickupType.BOTTLE]: Object.freeze({ radius: 0.038, height: 0.3 }),
   [PickupType.CAN]: Object.freeze({ radius: 0.033, height: 0.12 }),
+  [PickupType.FLARE]: Object.freeze({ radius: 0.022, height: 0.24 }),
 });
+const TAPE_HEIGHT = 0.09;
 
 /**
  * @typedef {typeof PickupType[keyof typeof PickupType]} PickupKind
@@ -29,6 +43,16 @@ export const THROWABLE_SIZE = Object.freeze({
 /** @param {Pickup} item */
 export function isThrowable(item) {
   return THROWABLE_TYPES.has(item.type);
+}
+
+/** @param {Pickup} item */
+function isOnFloor(item) {
+  return FLOOR_TYPES.has(item.type);
+}
+
+/** How high an item's origin sits when it rests on the floor. @param {PickupKind} type */
+function floorHeight(type) {
+  return type === PickupType.TAPE ? TAPE_HEIGHT / 2 : THROWABLE_SIZE[type].height / 2;
 }
 
 /**
@@ -51,6 +75,22 @@ export function createPickups(scene, level) {
     opacity: 0.85,
   });
   const tinMaterial = new THREE.MeshStandardMaterial({ color: 0x8a2a22, metalness: 0.85, roughness: 0.35 });
+  // Pages and the floor plan glow faintly so a careful look finds them; they are optional, not signposted like keys.
+  const paperMaterial = new THREE.MeshStandardMaterial({
+    color: 0xe8dcc0,
+    roughness: 0.9,
+    emissive: 0x6a5f48,
+    side: THREE.DoubleSide,
+  });
+  const mapMaterial = new THREE.MeshStandardMaterial({
+    color: 0xb8c8d8,
+    roughness: 0.85,
+    emissive: 0x2a4058,
+    side: THREE.DoubleSide,
+  });
+  const recorderMaterial = new THREE.MeshStandardMaterial({ color: 0x2a2724, roughness: 0.6, emissive: 0x200805 });
+  const bandageMaterial = new THREE.MeshStandardMaterial({ color: 0xf2efe6, roughness: 0.95, emissive: 0x2a2620 });
+  const flareMaterial = new THREE.MeshStandardMaterial({ color: 0xc0201a, roughness: 0.5, emissive: 0x400806 });
 
   /** @type {Pickup[]} */
   const items = [
@@ -61,6 +101,11 @@ export function createPickups(scene, level) {
         ? placeOnFloor(PickupType.BOTTLE, cell, createBottleMesh(glassMaterial))
         : placeOnFloor(PickupType.CAN, cell, createCanMesh(tinMaterial)),
     ),
+    ...level.pages.map((cell) => placeItem(PickupType.PAGE, cell, createPageMesh(paperMaterial))),
+    ...level.tapes.map((cell) => placeOnFloor(PickupType.TAPE, cell, createTapeMesh(recorderMaterial))),
+    ...level.maps.map((cell) => placeItem(PickupType.MAP, cell, createMapMesh(mapMaterial))),
+    ...level.bandages.map((cell) => placeItem(PickupType.BANDAGE, cell, createBandageMesh(bandageMaterial))),
+    ...level.flares.map((cell) => placeItem(PickupType.FLARE, cell, createFlareMesh(flareMaterial))),
   ];
   items.forEach((item) => scene.add(item.mesh));
 
@@ -82,7 +127,7 @@ export function createPickups(scene, level) {
     update(time) {
       keyMaterial.emissiveIntensity = KEY_GLOW.base + Math.sin(time * KEY_GLOW.speed) * KEY_GLOW.pulse;
       for (const item of items) {
-        if (item.isTaken || isThrowable(item)) continue;
+        if (item.isTaken || isOnFloor(item)) continue;
         item.mesh.rotation.y = time * 1.2 + item.phase;
         item.mesh.position.y = HOVER_HEIGHT + Math.sin(time * 2 + item.phase) * 0.05;
       }
@@ -115,18 +160,19 @@ export function createPickups(scene, level) {
     putBack,
 
     /**
-     * Lays an item from the bag back in the world at (x, z): a bottle or can upright on the floor, a battery hovering.
+     * Lays an item from the bag back in the world at (x, z): a bottle, can or flare upright on the floor, the rest
+     * hovering.
      * @param {Pickup} item @param {{ x: number, z: number }} point
      */
     drop(item, point) {
-      const y = isThrowable(item) ? THROWABLE_SIZE[item.type].height / 2 : HOVER_HEIGHT;
+      const y = isOnFloor(item) ? floorHeight(item.type) : HOVER_HEIGHT;
       item.mesh.position.set(point.x, y, point.z);
       item.mesh.rotation.set(0, item.phase, 0);
       putBack(item);
     },
 
     /** @param {Pickup} item */
-    label: (item) => item.type,
+    label: (item) => LABELS[item.type] ?? item.type,
   };
 }
 
@@ -136,12 +182,12 @@ function placeItem(type, cell, mesh) {
   return { type, cell, mesh, phase: Math.random() * Math.PI * 2, isTaken: false };
 }
 
-/** A throwable standing on the floor, a little off the cell center so they do not line up on the grid. */
+/** An item standing on the floor, a little off the cell center so they do not line up on the grid. */
 function placeOnFloor(type, cell, mesh) {
   const item = placeItem(type, cell, mesh);
   mesh.position.x += (Math.random() - 0.5) * 2 * FLOOR_SCATTER;
   mesh.position.z += (Math.random() - 0.5) * 2 * FLOOR_SCATTER;
-  mesh.position.y = THROWABLE_SIZE[type].height / 2;
+  mesh.position.y = floorHeight(type);
   mesh.rotation.y = item.phase;
   return item;
 }
@@ -187,4 +233,62 @@ function createBottleMesh(material) {
 function createCanMesh(material) {
   const { radius, height } = THROWABLE_SIZE[PickupType.CAN];
   return new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, height, 14), material);
+}
+
+/** A torn journal page, tilted toward whoever walks up to it. */
+function createPageMesh(material) {
+  const page = new THREE.Mesh(new THREE.PlaneGeometry(0.21, 0.28), material);
+  page.rotation.x = -0.35;
+  const group = new THREE.Group();
+  group.add(page);
+  return group;
+}
+
+/** A portable cassette recorder lying on the floor. */
+function createTapeMesh(material) {
+  const recorder = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.26, TAPE_HEIGHT, 0.16), material);
+  body.castShadow = true;
+  const reelMaterial = new THREE.MeshStandardMaterial({ color: 0x8a7a60, roughness: 0.5 });
+  recorder.add(body);
+  [-0.05, 0.05].forEach((x) => {
+    const reel = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.01, 12), reelMaterial);
+    reel.position.set(x, TAPE_HEIGHT / 2 + 0.003, 0);
+    recorder.add(reel);
+  });
+  return recorder;
+}
+
+/** A folded floor plan. */
+function createMapMesh(material) {
+  const map = new THREE.Group();
+  [-1, 1].forEach((side) => {
+    const half = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.24), material);
+    half.position.x = side * 0.075;
+    half.rotation.y = side * 0.35;
+    map.add(half);
+  });
+  return map;
+}
+
+/** A rolled bandage. */
+function createBandageMesh(material) {
+  const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.08, 14), material);
+  roll.rotation.z = Math.PI / 2;
+  const group = new THREE.Group();
+  group.add(roll);
+  return group;
+}
+
+/** A road flare: red tube with a dark striker cap. Centered on its origin, upright along Y. */
+function createFlareMesh(material) {
+  const { radius, height } = THROWABLE_SIZE[PickupType.FLARE];
+  const flare = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, height, 10), material);
+  const cap = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius * 1.1, radius * 1.1, 0.04, 10),
+    new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.7 }),
+  );
+  cap.position.y = height / 2;
+  flare.add(cap);
+  return flare;
 }

@@ -1,5 +1,10 @@
 import * as THREE from 'three';
-import { LEVEL_MAP, ROOMS, parseLevel, cellToWorld, isWalkable } from './level/level.js';
+import { LEVEL_MAP, ROOMS, MARROW_OFFICE, parseLevel, cellToWorld, isWalkable } from './level/level.js';
+import { blockPassages } from './level/blockers.js';
+import { createRecordBook, formatTime } from './core/records.js';
+import { createScreenLock } from './core/screen-lock.js';
+import { startErrorReporting } from './core/error-reporting.js';
+import { FpsMeter } from './render/fps-meter.js';
 import { createWorld } from './world/world.js';
 import { Input } from './core/input.js';
 import { Player } from './player/player.js';
@@ -12,9 +17,10 @@ import { createPickups } from './items/pickups.js';
 import { HorrorAudio } from './audio/audio.js';
 import { createHud } from './ui/hud.js';
 import { Game } from './core/game.js';
-import { bindSettingsForm, bindSettingsMenu } from './core/settings.js';
+import { bindSettingsForm, bindSettingsMenu, loadSettings } from './core/settings.js';
 import { DIFFICULTIES } from './core/difficulty.js';
-import { scatterItems } from './level/scatter.js';
+import { scatterItems, PAGE_COUNT } from './level/scatter.js';
+import { ENDINGS } from './core/story.js';
 import { TUTORIAL_MAP, TUTORIAL_ROOMS } from './level/tutorial-map.js';
 import { Tutorial } from './core/tutorial.js';
 import { createGraphics } from './render/graphics.js';
@@ -27,6 +33,7 @@ const MAX_MOUSE_STEP = 300; // px in one event
 // sessionStorage: how the next page load starts. 'restart' = a new run with a compact title screen,
 // 'tutorial' = the tutorial. Absent = the full title screen.
 const LAUNCH_KEY = 'way-out-launch';
+const SLOW_TIP = 'The game is running slowly. Try Settings → Display → Graphics: Low.';
 const DIRECTIONS = [
   [1, 0],
   [-1, 0],
@@ -39,11 +46,25 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap; // tone mapping is done by the effect chain in graphics.js
 document.getElementById('app').appendChild(renderer.domElement);
 
+const savedSettings = loadSettings();
+startErrorReporting({
+  dsn: import.meta.env.VITE_SENTRY_DSN,
+  release: version,
+  isEnabled: savedSettings.isErrorReportingOn,
+  isProduction: import.meta.env.PROD,
+});
+
 const launch = takeLaunch();
 const isTutorial = launch === 'tutorial';
-// Keys and throwables land somewhere new every run; the tutorial is always laid out the same.
-const level = isTutorial ? parseLevel(TUTORIAL_MAP) : scatterItems(parseLevel(LEVEL_MAP));
-const world = createWorld(level, isTutorial ? TUTORIAL_ROOMS : ROOMS);
+const rooms = isTutorial ? TUTORIAL_ROOMS : ROOMS;
+// Every run chains a few doors, caves in a few hall cells, and scatters the keys, pages, tapes and supplies anew;
+// the tutorial is always laid out the same.
+const level = isTutorial
+  ? parseLevel(TUTORIAL_MAP)
+  : scatterItems(parseLevel(blockPassages(LEVEL_MAP, ROOMS)), Math.random, {
+      tapeRoom: ROOMS.find((room) => room.name === MARROW_OFFICE),
+    });
+const world = createWorld(level, rooms);
 const { scene } = world;
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 80);
@@ -86,7 +107,16 @@ document.querySelectorAll('[data-version]').forEach((label) => {
   label.textContent = `v${version}`;
 });
 const tutorial = isTutorial ? new Tutorial() : null;
+const recordBook = createRecordBook(storage());
+hud.setRecords(describeRecords(recordBook.records));
+hud.initMap(level, rooms);
+const screenLock = createScreenLock();
+const fpsMeter = new FpsMeter();
+const fpsLabel = document.getElementById('fps');
+let settings = savedSettings;
 const game = new Game({
+  rooms,
+  recordBook,
   level,
   camera,
   input,
@@ -121,14 +151,17 @@ Promise.all([handLoaded, monsterLoaded])
 
 const settingsMenu = bindSettingsMenu(document.getElementById('settings'));
 const difficultySelect = /** @type {HTMLSelectElement} */ (document.querySelector('[data-setting="difficulty"]'));
-bindSettingsForm(document.getElementById('settings'), (settings) => {
+bindSettingsForm(document.getElementById('settings'), (changed) => {
+  settings = changed;
   game.setDifficulty(DIFFICULTIES[settings.difficulty]);
   audio.setVolumes(settings.masterVolume, settings.ambienceVolume);
   player.mouseSensitivity = settings.mouseSensitivity;
   player.isYInverted = settings.isYInverted;
   player.baseFov = settings.fov;
   renderer.toneMappingExposure = settings.brightness;
-  graphics.setQuality(settings.isHighQuality);
+  graphics.setQuality(settings.graphics);
+  screenLock.setEnabled(settings.isFullscreen);
+  fpsLabel.classList.toggle('hidden', !settings.showFps);
 });
 
 hud.setQuickStart(launch !== null);
@@ -163,8 +196,13 @@ hud.onMenuAction((action) => {
 document.addEventListener('pointerlockerror', () => hud.showResumeRetry());
 document.addEventListener('pointerlockchange', () => {
   input.isCapturing = document.pointerLockElement === renderer.domElement; // browser shortcuts only work in menus
+  screenLock.setPlaying(input.isCapturing && !game.isOver); // Ctrl+W & co. belong to the game only while it plays
   if (game.isOver) return;
   game.setPaused(document.pointerLockElement !== renderer.domElement);
+});
+// With the keyboard locked, a short Esc reaches the page instead of freeing the mouse: free it ourselves (pause).
+window.addEventListener('keydown', (event) => {
+  if (event.code === 'Escape' && input.isCapturing) document.exitPointerLock();
 });
 
 document.addEventListener('mousemove', (e) => {
@@ -184,8 +222,10 @@ timer.connect(document);
 renderer.setAnimationLoop((timestamp) => {
   devTools?.begin();
   timer.update(timestamp);
-  const dt = Math.min(timer.getDelta(), MAX_DT);
+  const frameTime = timer.getDelta();
+  const dt = Math.min(frameTime, MAX_DT);
   game.update(dt, timer.getElapsed());
+  if (!game.isPaused && !game.isOver) measureFps(frameTime);
   dust.update(dt, player.position, flashlight.brightness, renderer.getPixelRatio());
   input.endFrame();
   graphics.render(dt);
@@ -203,6 +243,37 @@ function lockPointer() {
   audio.start();
   // Chrome refuses a re-lock for about a second after Esc; the menu simply stays open and the next click works.
   Promise.resolve(renderer.domElement.requestPointerLock()).catch(() => hud.showResumeRetry());
+  screenLock.enter(); // same click: full screen also needs a user gesture
+}
+
+/** The FPS readout (when switched on), and one hint if the run starts out too slow for its graphics. @param {number} frameTime s */
+function measureFps(frameTime) {
+  const { fps, isTooSlow } = fpsMeter.sample(frameTime);
+  if (fps !== null && settings.showFps) fpsLabel.textContent = `${fps} FPS`;
+  if (isTooSlow && settings.graphics !== 'low') hud.toast(SLOW_TIP);
+}
+
+/** @returns {Storage | null} localStorage, or null where it is blocked */
+function storage() {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+/** The title screen's line of records: best escape per difficulty, journal pages, endings seen. @param {import('./core/records.js').Records} records */
+function describeRecords(records) {
+  if (records.escapes + records.deaths === 0) return '';
+  const times = Object.entries(records.bestTimes).map(
+    ([name, time]) => `${DIFFICULTIES[name].label} ${formatTime(time)}`,
+  );
+  const parts = [
+    times.length > 0 ? `Best escape: ${times.join(' · ')}` : `Escapes: 0 of ${records.deaths} tries`,
+    `Journal: ${records.mostPages}/${PAGE_COUNT} pages`,
+    `Endings: ${records.endings.length}/${Object.keys(ENDINGS).length}`,
+  ];
+  return parts.join('  —  ');
 }
 
 /**

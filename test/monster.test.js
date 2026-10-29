@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { parseLevel, cellToWorld } from '../src/level/level.js';
-import { Monster, MonsterState } from '../src/monster/monster.js';
+import { Monster, MonsterState, WARY_KEYS, PREDICT_KEYS, LURE_WARINESS } from '../src/monster/monster.js';
 import { Flashlight } from '../src/player/flashlight.js';
 import { DIFFICULTIES } from '../src/core/difficulty.js';
 
@@ -189,6 +189,64 @@ describe('Monster and thrown noises', () => {
     expect(monster.isPerceiving).toBe(false);
     expect(monster.hearNoise(at(1, 1), 20)).toBe(true);
     expect(monster.lastKnown.x).toBeCloseTo(at(1, 1).x);
+  });
+});
+
+describe('It learns as the keys are found', () => {
+  it('sees farther and searches longer with every key', () => {
+    const { monster, at, target } = setup();
+    const far = target(at(4, 5));
+    const baseSearch = monster.searchDuration;
+    monster.setRage(5);
+    expect(monster.searchDuration).toBeGreaterThan(baseSearch);
+    expect(monster.smarts('sight')).toBeGreaterThan(1);
+    expect(monster.canSee(far, 12)).toBe(false); // still has its limits
+  });
+
+  it('ignores a lure that comes right after the last one, once it has learned enough', () => {
+    const { monster, at } = setup();
+    monster.setRage(WARY_KEYS);
+    expect(monster.hearNoise(at(6, 5), 20, true)).toBe(true);
+    monster.calm();
+    expect(monster.hearNoise(at(2, 1), 20, true)).toBe(false); // too soon: it has learned
+    expect(monster.hearNoise(at(2, 1), 20)).toBe(true); // a real noise still counts
+
+    monster.calm();
+    monster.clock += LURE_WARINESS + 1;
+    expect(monster.hearNoise(at(2, 1), 20, true)).toBe(true);
+  });
+
+  it('falls for every lure before that', () => {
+    const { monster, at } = setup();
+    monster.setRage(WARY_KEYS - 1);
+    expect(monster.hearNoise(at(6, 5), 20, true)).toBe(true);
+    monster.calm();
+    expect(monster.hearNoise(at(2, 1), 20, true)).toBe(true);
+  });
+
+  it('heads to where a player was running when it loses them', () => {
+    const { monster, at } = setup();
+    monster.setRage(PREDICT_KEYS);
+    monster.alert(at(2, 3));
+    monster.lastVelocity.set(3, 0, 0); // running east
+    monster.predictEscape();
+    expect(monster.lastKnown.x).toBeGreaterThan(at(2, 3).x + 3);
+    expect(monster.lastKnown.z).toBeCloseTo(at(2, 3).z, 5);
+  });
+
+  it('never predicts into a wall', () => {
+    const { monster, at } = setup();
+    monster.alert(at(6, 3));
+    monster.lastVelocity.set(6, 0, 0); // straight at the east wall
+    monster.predictEscape();
+    expect(monster.lastKnown.x).toBeLessThanOrEqual(at(7, 3).x + 1.5);
+  });
+
+  it('remembers whether it noticed the player by sight or by hearing', () => {
+    const { monster, at, target } = setup();
+    const sprinter = target(at(1, 1), { noiseRadius: 15 }); // ~11 m away: beyond its sight, not its hearing
+    for (let i = 0; i < 120 && monster.state !== MonsterState.CHASE; i++) monster.update(DT, sprinter);
+    expect(monster.lastSense).toBe('hearing');
   });
 });
 

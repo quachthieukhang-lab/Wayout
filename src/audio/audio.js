@@ -15,6 +15,8 @@ const EMITTERS = Object.freeze({
   monster: { refDistance: 3, rolloffFactor: 1.5 },
   beacon: { refDistance: 6, rolloffFactor: 1 }, // key sense chime, a few cells ahead along the route
   distant: { refDistance: DISTANT_RADIUS, rolloffFactor: 1 },
+  phantom: { refDistance: 3, rolloffFactor: 1.2 }, // a sound right behind you that nothing made
+  slam: { refDistance: 6, rolloffFactor: 1 }, // a door banging shut somewhere
 });
 const IMPACT_EMITTER = Object.freeze({ refDistance: 4, rolloffFactor: 1 }); // a thrown bottle or can landing
 const RADIO_TUNE = Object.freeze([523, 659, 784, 659, 587, 698, 880, 698]); // a tinny old waltz
@@ -27,6 +29,21 @@ const CHASE_FADE_IN = 0.6; // s
 const CHASE_FADE_OUT = 3;
 const CHASE_BEAT = 0.4; // s between drum hits (150 bpm)
 const CHASE_ACCENT_EVERY = 4;
+// Echo of the space the player stands in: a room, a long hall, or something tight (a vent, a locker).
+// Generated impulse responses: decaying noise, so no audio files. `wet` = how much of everything is sent to it.
+const SPACES = Object.freeze({
+  room: Object.freeze({ seconds: 1.1, decay: 3, wet: 0.22 }),
+  hall: Object.freeze({ seconds: 2.6, decay: 2.2, wet: 0.35 }),
+  tight: Object.freeze({ seconds: 0.35, decay: 4, wet: 0.3 }),
+});
+const SPACE_FADE = 0.4; // s time constant of the crossfade between spaces
+// Breathing: slow and nearly silent at rest, fast and loud when spent; held in when hiding.
+const BREATH_PERIOD = Object.freeze({ calm: 4, spent: 1.1 }); // s per breath
+const BREATH_VOLUME = Object.freeze({ calm: 0.012, spent: 0.09 });
+const HIDDEN_BREATH = 0.5;
+const LOW_HEALTH = 0.4; // below this the heart pounds even when nothing is near
+const FLARE_HISS = 0.05;
+const TAPE_SYLLABLE = Object.freeze({ min: 0.14, max: 0.32 }); // s per murmured syllable
 
 /** @typedef {{ x: number, z: number }} Point */
 
@@ -42,7 +59,12 @@ export class HorrorAudio {
     this.masterVolume = MASTER_VOLUME;
     this.ambienceVolume = 1;
     this.heartTimer = 0;
+    this.breathTimer = 0;
     this.ambientTimer = 10;
+    /** @type {keyof typeof SPACES | null} */
+    this.space = null;
+    /** @type {{ emitter: THREE.PositionalAudio, gain: GainNode } | null} created the first time a flare burns */
+    this.flareHiss = null;
   }
 
   /** Must be called from a user gesture (browser autoplay policy). */
@@ -64,6 +86,7 @@ export class HorrorAudio {
     compressor.ratio.value = 3;
     this.listener.setFilter(compressor);
     this.master = this.listener.getInput();
+    this.reverbs = this.createReverbs(compressor);
     this.master.gain.value = this.masterVolume;
     for (const [name, options] of Object.entries(EMITTERS)) this.emitters[name] = this.createEmitter(options);
     this.impactEmitters = Array.from({ length: IMPACT_VOICES }, () => this.createEmitter(IMPACT_EMITTER));
@@ -92,13 +115,26 @@ export class HorrorAudio {
     else this.ctx.resume();
   }
 
-  /** @param {number} dt @param {number} danger 0..1, drives the heartbeat */
-  update(dt, danger) {
+  /**
+   * @param {number} dt @param {number} danger 0..1, drives the heartbeat
+   * @param {{ exertion?: number, health?: number, isHidden?: boolean }} [vitals] exertion 0..1 (spent = 1) drives the
+   *   breathing; health 0..1 below LOW_HEALTH makes the heart pound; hidden = holding your breath
+   */
+  update(dt, danger, { exertion = 0, health = 1, isHidden = false } = {}) {
     if (!this.ctx) return;
+    const pounding = Math.max(danger, health < LOW_HEALTH ? (1 - health / LOW_HEALTH) * 0.6 : 0);
     this.heartTimer -= dt;
-    if (danger > 0.05 && this.heartTimer <= 0) {
-      this.heartbeat(danger);
-      this.heartTimer = 1.2 - danger * 0.8;
+    if (pounding > 0.05 && this.heartTimer <= 0) {
+      this.heartbeat(pounding);
+      this.heartTimer = 1.2 - pounding * 0.8;
+    }
+    this.breathTimer -= dt;
+    if (this.breathTimer <= 0) {
+      const effort = Math.min(Math.max(exertion, danger * 0.6), 1);
+      const period = THREE.MathUtils.lerp(BREATH_PERIOD.calm, BREATH_PERIOD.spent, effort);
+      const volume = THREE.MathUtils.lerp(BREATH_VOLUME.calm, BREATH_VOLUME.spent, effort);
+      this.breathe(period, isHidden ? volume * HIDDEN_BREATH : volume);
+      this.breathTimer = period;
     }
     if (this.isChasing) this.updateChaseDrums(dt);
     this.ambientTimer -= dt;
@@ -147,6 +183,134 @@ export class HorrorAudio {
     const volume = 0.3 + danger * 0.5;
     this.tone({ type: 'triangle', freq: 95, freqEnd: 55, duration: 0.18, volume });
     this.tone({ type: 'triangle', freq: 85, freqEnd: 50, duration: 0.18, volume: volume * 0.7, delay: 0.2 });
+  }
+
+  /** One breath: an airy inhale, then a lower exhale. @param {number} period s @param {number} volume */
+  breathe(period, volume) {
+    this.noise({ duration: period * 0.35, volume, freq: 1300, Q: 0.6, attack: period * 0.15 });
+    this.noise({ duration: period * 0.4, volume: volume * 0.8, freq: 650, Q: 0.7, attack: 0.05, delay: period * 0.42 });
+  }
+
+  /** Crossfades the echo to fit where the player stands. @param {keyof typeof SPACES} space */
+  setSpace(space) {
+    if (!this.ctx || space === this.space) return;
+    this.space = space;
+    const now = this.ctx.currentTime;
+    for (const [name, wet] of Object.entries(this.reverbs)) {
+      wet.gain.setTargetAtTime(name === space ? SPACES[name].wet : 0, now, SPACE_FADE);
+    }
+  }
+
+  /** A convolver per space, all fed from the master bus, each with its own (silent until chosen) return. */
+  createReverbs(output) {
+    /** @type {Record<string, GainNode>} */
+    const returns = {};
+    for (const [name, { seconds, decay }] of Object.entries(SPACES)) {
+      const convolver = this.ctx.createConvolver();
+      convolver.buffer = createImpulse(this.ctx, seconds, decay);
+      const wet = gainNode(this.ctx, 0);
+      this.master.connect(convolver).connect(wet).connect(output);
+      returns[name] = wet;
+    }
+    return returns;
+  }
+
+  /** A tape recorder: hiss and a muffled voice, syllable after syllable. @param {number} duration s */
+  tape(duration) {
+    if (!this.ctx) return;
+    this.noise({ duration, volume: 0.04, type: 'highpass', freq: 4000, attack: 0.1 });
+    for (let t = 0.3; t < duration - 0.3;) {
+      const length = TAPE_SYLLABLE.min + Math.random() * (TAPE_SYLLABLE.max - TAPE_SYLLABLE.min);
+      const pitch = 110 + Math.random() * 60;
+      this.tone({
+        type: 'sawtooth',
+        freq: pitch,
+        freqEnd: pitch * (0.85 + Math.random() * 0.3),
+        duration: length,
+        volume: 0.06,
+        attack: 0.03,
+        delay: t,
+        filterFreq: 500 + Math.random() * 1000, // the moving formant makes it sound like words
+      });
+      t += length + (Math.random() < 0.2 ? 0.35 : 0.04); // the odd pause between words
+    }
+  }
+
+  /** The striker scraping, then the flare catching. */
+  flareIgnite() {
+    this.noise({ duration: 0.15, volume: 0.2, type: 'highpass', freq: 2500 });
+    this.noise({ duration: 0.6, volume: 0.15, freq: 1800, Q: 0.5, delay: 0.12, attack: 0.05 });
+  }
+
+  /**
+   * The hiss of a burning flare, from where it lies. Call every frame.
+   * @param {{ x: number, y?: number, z: number } | null} position null = none burning
+   */
+  flareBurning(position) {
+    if (!this.ctx || (!position && !this.flareHiss)) return;
+    if (!this.flareHiss) {
+      const emitter = this.createEmitter(IMPACT_EMITTER);
+      const hiss = this.ctx.createBufferSource();
+      hiss.buffer = this.noiseBuffer;
+      hiss.loop = true;
+      const gain = gainNode(this.ctx, 0);
+      hiss
+        .connect(this.filter('bandpass', 3200, 0.8))
+        .connect(gain)
+        .connect(emitter.getOutput());
+      hiss.start();
+      this.flareHiss = { emitter, gain };
+    }
+    const { emitter, gain } = this.flareHiss;
+    gain.gain.setTargetAtTime(position ? FLARE_HISS : 0, this.ctx.currentTime, 0.2);
+    if (!position) return;
+    emitter.position.set(position.x, position.y ?? SOURCE_HEIGHT, position.z);
+    emitter.updateMatrixWorld();
+  }
+
+  /** Cloth tearing, then wrapped tight. */
+  bandage() {
+    this.noise({ duration: 0.35, volume: 0.12, freq: 2200, Q: 0.6, attack: 0.02 });
+    this.noise({ duration: 0.25, volume: 0.08, freq: 900, Q: 0.8, delay: 0.4 });
+  }
+
+  /** Every lamp dies at once: the mains hum winds down, then a heavy clunk. */
+  powerDown() {
+    this.tone({ type: 'sawtooth', freq: 120, freqEnd: 30, duration: 1.6, volume: 0.12, filterFreq: 400 });
+    this.tone({ type: 'triangle', freq: 90, freqEnd: 40, duration: 0.4, volume: 0.35, delay: 1.5 });
+  }
+
+  /** The power comes back: a rising hum and the lamps buzzing on. */
+  powerUp() {
+    this.tone({ type: 'sawtooth', freq: 40, freqEnd: 120, duration: 1.2, volume: 0.08, filterFreq: 400 });
+    this.noise({ duration: 0.3, volume: 0.06, freq: 3000, Q: 4, delay: 1 });
+  }
+
+  /** A door banging shut somewhere. @param {Point} position */
+  doorSlam(position) {
+    if (!this.ctx) return;
+    this.place('slam', position);
+    this.tone({ type: 'triangle', freq: 110, freqEnd: 45, duration: 0.5, volume: 0.6, source: 'slam' });
+    this.noise({ duration: 0.3, volume: 0.45, type: 'lowpass', freq: 900, source: 'slam' });
+    this.noise({ duration: 0.15, volume: 0.2, freq: 2400, Q: 3, delay: 0.05, source: 'slam' });
+  }
+
+  /** Right behind the player: slow footsteps, a knock, or a whisper. Nothing is there. @param {Point} position */
+  phantom(position) {
+    if (!this.ctx) return;
+    this.place('phantom', position);
+    const source = 'phantom';
+    const roll = Math.random();
+    if (roll < 0.4) {
+      [0, 0.7, 1.4].forEach((delay) =>
+        this.tone({ type: 'triangle', freq: 100, freqEnd: 50, duration: 0.3, volume: 0.25, delay, source }),
+      );
+    } else if (roll < 0.7) {
+      [0, 0.25].forEach((delay) => this.noise({ duration: 0.08, volume: 0.3, freq: 500, Q: 2, delay, source }));
+    } else {
+      this.noise({ duration: 1.6, volume: 0.06, freq: 2800, Q: 2.5, attack: 0.4, source });
+      this.noise({ duration: 1.2, volume: 0.04, freq: 1500, Q: 3, attack: 0.3, delay: 0.3, source });
+    }
   }
 
   pickup() {
@@ -499,6 +663,17 @@ function createNoiseBuffer(ctx) {
   const buffer = ctx.createBuffer(1, ctx.sampleRate * NOISE_SECONDS, ctx.sampleRate);
   const data = buffer.getChannelData(0);
   for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  return buffer;
+}
+
+/** Stereo room echo: noise dying away. @param {BaseAudioContext} ctx @param {number} seconds @param {number} decay */
+function createImpulse(ctx, seconds, decay) {
+  const length = Math.floor(ctx.sampleRate * seconds);
+  const buffer = ctx.createBuffer(2, length, ctx.sampleRate);
+  for (let channel = 0; channel < 2; channel++) {
+    const data = buffer.getChannelData(channel);
+    for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / length) ** decay;
+  }
   return buffer;
 }
 

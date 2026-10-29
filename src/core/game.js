@@ -1,16 +1,20 @@
 import * as THREE from 'three';
-import { Easing } from '@tweenjs/tween.js';
-import { worldToCell, cellToWorld, exitApproach, noisyFloorAt } from '../level/level.js';
+import { worldToCell, cellToWorld, exitApproach, noisyFloorAt, spaceAt } from '../level/level.js';
 import { RADIO_NOISE } from '../world/radios.js';
 import { KeySense } from '../items/key-sense.js';
 import { hasLineOfSight } from '../level/pathfinding.js';
-import { MonsterState } from '../monster/monster.js';
+import { MonsterState, PREDICT_KEYS, WARY_KEYS } from '../monster/monster.js';
 import { PickupType } from '../items/pickups.js';
 import { PLAYER_CONFIG, PlayerState } from '../player/player.js';
-import { THROWABLE, THROW_SPEED, Throwing } from '../items/throwables.js';
-import { Inventory, INVENTORY_SLOTS } from '../items/inventory.js';
+import { Inventory } from '../items/inventory.js';
+import { Bag } from './bag.js';
 import { DIFFICULTIES } from './difficulty.js';
-import { STORY_NOTES } from './story.js';
+import { STORY_NOTES, TAPES, ENDINGS, endingFor } from './story.js';
+import { WorldEvents } from './events.js';
+import { createMonsterDirector } from './tutorial.js';
+import { CloseUp, JUMPSCARE_SHOT, grabShot } from './close-up.js';
+import { deathTip } from './tips.js';
+import { formatTime } from './records.js';
 
 export const GameState = Object.freeze({
   PLAYING: 'playing',
@@ -20,8 +24,6 @@ export const GameState = Object.freeze({
   WON: 'won',
 });
 
-const BATTERY_RECHARGE = 0.45;
-const FULL_BATTERY = 0.99; // a fresh battery would be wasted above this
 const DANGER_RANGE = 16;
 const CHASE_MIN_DANGER = 0.35;
 const MONSTER_HEARING_RANGE = 24;
@@ -39,16 +41,13 @@ const HEALTH_REGEN = 2; // per second, once safe
 const REGEN_DELAY = 8; // seconds without damage before regenerating
 
 const KEY_NOISE_RANGE = 18; // how far the clink of a picked-up key carries
-const USE_KEYS = ['KeyG', 'Mouse0']; // throw the selected bottle or can, or put the selected battery in
-const DROP_KEY = 'KeyX';
-const DROP_AHEAD = 0.3; // m in front of the feet: less than the player's radius, so never inside a wall
-const DROP_VOLUME = 0.15;
-const SLOT_KEYS = Array.from({ length: INVENTORY_SLOTS }, (_, i) => `Digit${i + 1}`);
-/** Shown the first time each kind of item goes in the bag. */
-const ITEM_TIPS = Object.freeze({
-  [PickupType.BOTTLE]: 'Picked up a bottle — press G or click to throw it and lure it away',
-  [PickupType.CAN]: 'Picked up a can — press G or click to throw it and lure it away',
-  [PickupType.BATTERY]: 'Battery in your bag — select it and press G or click to put it in the flashlight',
+const TAPE_NOISE = 7; // m a playing tape carries: you listen, so might it
+const TAPE_PLAY_TIME = 9; // s of murmuring
+const MAP_KEY = 'KeyM';
+/** Told when the monster learns something new, on the key that teaches it. */
+const LEARNING_TOASTS = Object.freeze({
+  [PREDICT_KEYS]: 'It is learning: when it loses you, it guesses where you were running.',
+  [WARY_KEYS]: 'It is learning: it will not fall for one noise after another now.',
 });
 const MONSTER_DOOR_TIME = 1.4; // s it spends forcing a closed door
 const DOOR_NOISE = 6; // m a door the player swings can be heard
@@ -57,6 +56,7 @@ const CAREFUL_FLOOR_VOLUME = 0.25; // glass and boards still whisper under a car
 const GRAB_DAMAGE = 20;
 const GRAB_DAMAGE_PER_SECOND = 7;
 const GRAB_TIMEOUT = 5; // fail to break free in time and it kills you
+const GRAB_SHOT = grabShot(GRAB_TIMEOUT);
 const STRUGGLE_PER_PRESS = 0.16;
 const STRUGGLE_DECAY = 0.3; // per second
 const BREAK_FREE_STUN = 3.5;
@@ -65,39 +65,25 @@ const BREAK_FREE_GRACE = 2; // seconds it cannot grab you again
 const FLASH_STUN = 3;
 const FLASH_RANGE = 10;
 const FLASH_CONE_COS = Math.cos(THREE.MathUtils.degToRad(18));
+const FLASH_MIN_BATTERY = 0.2; // a burst needs this much
 
-const FACE_FROM_TOP = 0.12; // face height as a fraction of the model height, measured from the top
-const JUMPSCARE_SHOT = Object.freeze({
-  fromDistance: 1.6,
-  toDistance: 0.45,
-  fov: 35,
-  shake: 0.08,
-  rise: 0.6,
-  zoomTime: 0.35,
-  duration: 2,
-});
-const GRAB_SHOT = Object.freeze({
-  fromDistance: 1.2,
-  toDistance: 0.85,
-  fov: 60,
-  shake: 0.035,
-  rise: 0.25,
-  zoomTime: 0.25,
-  duration: GRAB_TIMEOUT,
-});
+/**
+ * @typedef {import('../level/level.js').Space} Space
+ * @typedef {{
+ *   level: import('../level/level.js').Level, camera: THREE.PerspectiveCamera, input: import('./input.js').Input,
+ *   player: import('../player/player.js').Player, viewModel: import('../player/viewmodel.js').ViewModel,
+ *   flashlight: import('../player/flashlight.js').Flashlight, monster: import('../monster/monster.js').Monster,
+ *   pickups: ReturnType<typeof import('../items/pickups.js').createPickups>, world: ReturnType<typeof import('../world/world.js').createWorld>,
+ *   audio: import('../audio/audio.js').HorrorAudio, hud: ReturnType<typeof import('../ui/hud.js').createHud>,
+ *   rooms?: readonly import('../level/level.js').Room[],
+ *   recordBook?: ReturnType<typeof import('./records.js').createRecordBook> | null,
+ *   tutorial?: import('./tutorial.js').Tutorial | null
+ * }} GameDeps
+ */
 
 /** Rules of the horror game: pickups, health, the monster, escaping its grip, the exit, and the jumpscare. */
 export class Game {
-  /**
-   * @param {{
-   *   level: import('../level/level.js').Level, camera: THREE.PerspectiveCamera, input: import('./input.js').Input,
-   *   player: import('../player/player.js').Player, viewModel: import('../player/viewmodel.js').ViewModel,
-   *   flashlight: import('../player/flashlight.js').Flashlight, monster: import('../monster/monster.js').Monster,
-   *   pickups: ReturnType<typeof import('../items/pickups.js').createPickups>, world: ReturnType<typeof import('../world/world.js').createWorld>,
-   *   audio: import('../audio/audio.js').HorrorAudio, hud: ReturnType<typeof import('../ui/hud.js').createHud>,
-   *   tutorial?: import('./tutorial.js').Tutorial | null
-   * }} deps
-   */
+  /** @param {GameDeps} deps */
   constructor(deps) {
     this.level = deps.level;
     this.camera = deps.camera;
@@ -110,6 +96,8 @@ export class Game {
     this.world = deps.world;
     this.audio = deps.audio;
     this.hud = deps.hud;
+    this.rooms = deps.rooms ?? [];
+    this.recordBook = deps.recordBook ?? null;
     /** @type {typeof GameState[keyof typeof GameState]} */
     this.state = GameState.PLAYING;
     this.isPaused = true;
@@ -118,28 +106,38 @@ export class Game {
     this.graceTimer = 0;
     this.keysFound = 0;
     this.totalKeys = deps.level.keys.length;
+    this.pagesFound = 0;
+    this.totalPages = deps.level.pages.length;
+    this.hasMap = false;
+    this.isMapOpen = false;
+    this.runTime = 0; // s played, pauses excluded
     this.isExitOpen = false;
     this.lastStep = 0;
     this.monsterStepTimer = 0;
-    this.grab = { time: 0, progress: 0 };
+    this.grab = { time: 0, progress: 0, best: 0 };
     this.shotTime = 0;
     this.hidingSpot = null;
     this.wasLightOn = false;
+    /** @type {import('./tips.js').DeathContext | null} how things stood when it got hold of the player */
+    this.deathContext = null;
+    /** @type {Space} */
+    this.space = 'room';
     this.keySense = new KeySense(deps.level);
     this.hasShownSenseTip = false;
-    this.throwing = new Throwing(deps.world.scene, deps.world.colliders);
-    this.inventory = new Inventory();
-    this.itemTips = new Set(); // item kinds whose use was already explained
+    this.bag = new Bag({
+      ...deps,
+      scene: deps.world.scene,
+      colliders: deps.world.colliders,
+      heal: (amount) => this.heal(amount),
+    });
     this.floorTips = new Set(); // noisy floor kinds already explained
     /** @type {import('./difficulty.js').Difficulty} */
     this.difficulty = DIFFICULTIES.normal;
     this.tutorial = deps.tutorial ?? null;
-    this.director = this.createMonsterDirector();
-
-    this._cameraBase = new THREE.Vector3();
-    this._forward = { x: 0, z: -1 };
-    this._faceHeight = 0;
-    this._startFov = deps.camera.fov;
+    this.director = createMonsterDirector(deps.monster, deps.player, deps.audio);
+    this.closeUp = new CloseUp(deps.camera, deps.player, deps.monster, deps.viewModel);
+    // The tutorial is scripted: no random blackouts or slamming doors there.
+    this.events = this.tutorial ? null : new WorldEvents(deps);
   }
 
   get isOver() {
@@ -177,6 +175,7 @@ export class Game {
       return;
     }
     if (this.isOver || this.isPaused) return;
+    this.runTime += dt;
     if (this.state === GameState.GRABBED) {
       this.updateGrab(dt);
       this.updateHud();
@@ -196,20 +195,25 @@ export class Game {
     this.flashlight.update(dt);
     this.viewModel.setLensGlow(Math.min(this.flashlight.brightness, 1));
     this.handleInteraction();
-    this.handleItemInput();
-    this.updateThrown(dt);
+    this.bag.handleInput(this.hidingSpot !== null);
+    this.bag.update(dt);
     this.updateKeySense(dt);
     this.updateRadios(dt);
     this.updateMonsterAtDoors();
     this.updateMonster(dt);
     this.audio.setChase(this.monster.state === MonsterState.CHASE);
     if (this.state !== GameState.PLAYING) return;
+    this.events?.update(dt, {
+      isBusy: this.monster.state === MonsterState.CHASE || this.hidingSpot !== null,
+      keysFound: this.keysFound,
+    });
     this.updateTutorial();
 
     this.checkEscape();
     this.updateFootsteps();
     this.regenerate(dt);
-    this.audio.update(dt, this.danger);
+    this.updateSound(dt);
+    this.updateMap();
     this.updateHud();
   }
 
@@ -218,6 +222,8 @@ export class Game {
       health: this.health / MAX_HEALTH,
       keysFound: this.keysFound,
       totalKeys: this.totalKeys,
+      pagesFound: this.pagesFound,
+      totalPages: this.totalPages,
       battery: this.flashlight.battery,
       stamina: this.player.stamina / PLAYER_CONFIG.MAX_STAMINA,
       isExhausted: this.player.isExhausted,
@@ -225,7 +231,10 @@ export class Game {
       alert: this.alertState,
       awareness: this.monster.state === MonsterState.CHASE ? 1 : this.monster.awareness,
       noise: this.hidingSpot ? 0 : Math.min(this.player.noiseRadius / LOUDEST_NOISE, 1),
-      inventory: { slots: this.inventory.slots.map((item) => item?.type ?? null), selected: this.inventory.selected },
+      inventory: {
+        slots: this.bag.inventory.slots.map((item) => item?.type ?? null),
+        selected: this.bag.inventory.selected,
+      },
     });
   }
 
@@ -244,6 +253,18 @@ export class Game {
     if (this.monster.state === MonsterState.CHASE) return Math.max(proximity, CHASE_MIN_DANGER);
     if (this.monster.state === MonsterState.STUNNED) return proximity * 0.4;
     return proximity * 0.7;
+  }
+
+  /** Heartbeat, breathing, and the echo of wherever the player stands. */
+  updateSound(dt) {
+    const stamina = this.player.stamina / PLAYER_CONFIG.MAX_STAMINA;
+    this.audio.update(dt, this.danger, {
+      exertion: this.player.isExhausted ? 1 : 1 - stamina,
+      health: this.health / MAX_HEALTH,
+      isHidden: this.hidingSpot !== null,
+    });
+    this.space = this.hidingSpot ? 'tight' : (spaceAt(this.level, this.rooms, this.player.position) ?? this.space);
+    this.audio.setSpace(this.space);
   }
 
   handleFlashlightInput() {
@@ -289,14 +310,15 @@ export class Game {
   findInteraction() {
     const item = this.pickups.findTarget(this.camera);
     if (item) {
-      if (Inventory.accepts(item) && this.inventory.isFull) {
-        const held = this.inventory.selectedItem;
+      if (Inventory.accepts(item) && this.bag.inventory.isFull) {
+        const held = this.bag.inventory.selectedItem;
         return {
           prompt: `[E] Swap your ${held.type} for the ${this.pickups.label(item)}`,
-          run: () => this.swapFor(item),
+          run: () => this.bag.swapFor(item, (next) => this.pickUp(next)),
         };
       }
-      return { prompt: `[E] Pick up ${this.pickups.label(item)}`, run: () => this.pickUp(item) };
+      const verb = item.type === PickupType.TAPE ? 'Play the' : 'Pick up';
+      return { prompt: `[E] ${verb} ${this.pickups.label(item)}`, run: () => this.pickUp(item) };
     }
     const position = this.player.position;
     const locker = this.world.lockers.findNear(position);
@@ -304,6 +326,7 @@ export class Game {
     const door = this.world.doors.findNear(position);
     if (door?.jamTimer > 0) return { prompt: 'The door is jammed' };
     if (door) return { prompt: `[E] ${door.isOpen ? 'Close' : 'Open'} the door`, run: () => this.useDoor(door) };
+    if (this.world.isNearLockedDoor?.(position)) return { prompt: 'Locked. Chained shut from the other side' };
     const radio = this.world.radios.findNear(position);
     if (!radio) return null;
     if (radio.timeLeft > 0) return { prompt: 'The radio crackles…' };
@@ -332,7 +355,7 @@ export class Game {
 
   /** A playing radio keeps calling the monster over. */
   updateRadios(dt) {
-    for (const radio of this.world.radios.update(dt)) this.monster.hearNoise(radio.position, RADIO_NOISE);
+    for (const radio of this.world.radios.update(dt)) this.monster.hearNoise(radio.position, RADIO_NOISE, true);
   }
 
   /** A closed door on its path: it stops, forces it open slowly, and the hinges scream. */
@@ -345,42 +368,52 @@ export class Game {
     this.audio.doorCreak(door.position);
   }
 
+  /** @param {import('../items/pickups.js').Pickup} item */
   pickUp(item) {
     this.pickups.take(item);
     this.audio.pickup();
     if (Inventory.accepts(item)) {
-      this.inventory.add(item);
-      this.hud.toast(this.itemTips.has(item.type) ? `Picked up a ${item.type}` : ITEM_TIPS[item.type]);
-      this.itemTips.add(item.type);
-      return;
+      this.bag.put(item);
+    } else if (item.type === PickupType.KEY) {
+      this.takeKey();
+    } else if (item.type === PickupType.PAGE) {
+      this.pagesFound++;
+      this.revealNote(STORY_NOTES[this.pagesFound - 1]);
+    } else if (item.type === PickupType.TAPE) {
+      this.playTape(item);
+    } else if (item.type === PickupType.MAP) {
+      this.hasMap = true;
+      this.hud.toast('Found a floor plan — press M to look at it');
     }
+  }
 
+  takeKey() {
     this.keysFound++;
     this.monster.setRage(this.keysFound);
-    this.revealNote();
+    const lesson = this.tutorial ? undefined : LEARNING_TOASTS[this.keysFound];
+    const count = `Key ${this.keysFound}/${this.totalKeys}`;
     if (this.keysFound === this.totalKeys) {
       this.openExit();
     } else if (this.keysFound > 1 && this.monster.distanceTo(this.player.position) < KEY_NOISE_RANGE) {
       this.monster.investigate(this.player.position); // it comes to check the clink, it does not know it was you
-      this.hud.toast(`Key ${this.keysFound}/${this.totalKeys} — something heard that...`);
+      this.hud.toast(`${count} — something heard that...${lesson ? ` ${lesson}` : ''}`);
     } else {
-      this.hud.toast(`Key ${this.keysFound}/${this.totalKeys}`);
+      this.hud.toast(lesson ? `${count}. ${lesson}` : count);
     }
   }
 
-  /** Each key carries the next page of Marrow's journal (not in the tutorial, which has its own objectives). */
-  revealNote() {
-    const note = STORY_NOTES[this.keysFound - 1];
-    if (this.tutorial || !note) return;
-    this.hud.showNote(note);
+  /** A tape plays out loud: its transcript is shown, and the monster may hear it. @param {import('../items/pickups.js').Pickup} item */
+  playTape(item) {
+    const index = this.pickups.items.filter((other) => other.type === PickupType.TAPE).indexOf(item);
+    this.revealNote(TAPES[Math.max(index, 0) % TAPES.length]);
+    this.audio.tape(TAPE_PLAY_TIME);
+    this.monster.hearNoise(this.player.position, TAPE_NOISE);
   }
 
-  /** The bag is full: the selected item goes down where the new one lay. @param {import('../items/pickups.js').Pickup} item */
-  swapFor(item) {
-    const { x, z } = item.mesh.position;
-    const dropped = this.inventory.removeSelected();
-    this.pickUp(item); // into the slot just emptied
-    this.pickups.drop(dropped, { x, z });
+  /** A journal page or a tape: shown as a card, then kept in the pause menu's Notes (not in the tutorial). */
+  revealNote(note) {
+    if (this.tutorial || !note) return;
+    this.hud.showNote(note);
   }
 
   openExit() {
@@ -389,6 +422,17 @@ export class Game {
     this.audio.doorOpen();
     this.monster.alert(this.player.position);
     this.hud.toast('The exit is open! RUN!');
+  }
+
+  // ---------- the floor plan: M shows it once found ----------
+
+  updateMap() {
+    if (this.input.wasPressed(MAP_KEY)) {
+      if (this.hasMap) this.isMapOpen = !this.isMapOpen;
+      else this.hud.toast('You have no map. A floor plan lies somewhere near where you woke.');
+    }
+    const { position, yaw } = this.player;
+    this.hud.setMap(this.isMapOpen ? { x: position.x, z: position.z, yaw, isExitOpen: this.isExitOpen } : null);
   }
 
   // ---------- tutorial: one objective at a time; caught = back to the step's checkpoint ----------
@@ -426,96 +470,6 @@ export class Game {
     this.audio.growl();
     this.hud.flash();
     this.hud.toast('It caught you. Try again from here.');
-  }
-
-  /** @returns {import('./tutorial.js').MonsterDirector} how tutorial steps stage the monster */
-  createMonsterDirector() {
-    const monster = this.monster;
-    const wake = () => monster.setDormant(false);
-    return {
-      sleep: () => monster.setDormant(true),
-      place: (cell) => {
-        wake();
-        monster.place(cell);
-      },
-      investigate: (cell, area) => {
-        wake();
-        monster.setPatrolArea(area);
-        const { x, z } = cellToWorld(cell);
-        monster.investigate(new THREE.Vector3(x, 0, z));
-      },
-      guard: (area) => {
-        wake();
-        monster.setPatrolArea(area);
-        monster.calm();
-      },
-      charge: (roarSeconds) => {
-        wake();
-        monster.setPatrolArea(null);
-        monster.alert(this.player.position, roarSeconds);
-        this.audio.growl(monster.position);
-      },
-    };
-  }
-
-  // ---------- the bag: 1-4 or the wheel select a slot, G / click use it, X drops it ----------
-
-  handleItemInput() {
-    const input = this.input;
-    const inventory = this.inventory;
-    SLOT_KEYS.forEach((code, index) => {
-      if (input.wasPressed(code)) inventory.select(index);
-    });
-    if (input.wasPressed('WheelDown')) inventory.cycle(1);
-    if (input.wasPressed('WheelUp')) inventory.cycle(-1);
-    if (this.hidingSpot) return;
-    if (input.wasPressed(...USE_KEYS)) this.useSelected();
-    else if (input.wasPressed(DROP_KEY)) this.dropSelected();
-  }
-
-  /** A bottle or can is thrown; a battery goes into the flashlight. */
-  useSelected() {
-    const item = this.inventory.selectedItem;
-    if (!item) return;
-    if (item.type === PickupType.BATTERY) {
-      if (this.flashlight.battery >= FULL_BATTERY) {
-        this.hud.toast('The flashlight is still full');
-        return;
-      }
-      this.inventory.removeSelected();
-      this.flashlight.recharge(BATTERY_RECHARGE);
-      this.audio.click();
-      this.hud.toast('Fresh battery in the flashlight');
-      return;
-    }
-    this.inventory.removeSelected();
-    this.throwing.throwFrom(item, this.camera, this.player.velocity);
-    this.audio.whoosh();
-  }
-
-  /** Sets the selected item down just in front of the feet, freeing the slot. */
-  dropSelected() {
-    const item = this.inventory.removeSelected();
-    if (!item) return;
-    const { position, yaw } = this.player;
-    const point = { x: position.x - Math.sin(yaw) * DROP_AHEAD, z: position.z - Math.cos(yaw) * DROP_AHEAD };
-    this.pickups.drop(item, point);
-    this.audio.clank(DROP_VOLUME, item.mesh.position);
-  }
-
-  // ---------- throwing: a bottle or can lands with a noise that draws it away ----------
-
-  updateThrown(dt) {
-    const { impacts, rested } = this.throwing.update(dt);
-    for (const impact of impacts) {
-      if (impact.breaks) this.audio.shatter(impact.position);
-      else this.audio.clank(Math.min(impact.speed / THROW_SPEED, 1), impact.position);
-      if (!impact.isFirst) continue;
-      if (this.monster.hearNoise(impact.position, THROWABLE[impact.item.type].noiseRadius)) {
-        this.hud.toast('It heard that...');
-      }
-    }
-    rested.forEach((item) => this.pickups.putBack(item));
   }
 
   // ---------- key sense: R shows the way to the nearest key (or the exit once it is open) ----------
@@ -558,6 +512,7 @@ export class Game {
   updateMonster(dt) {
     const event = this.monster.update(dt, {
       position: this.player.position,
+      velocity: this.player.velocity,
       noiseRadius: this.hidingSpot ? 0 : this.player.noiseRadius,
       isCrouching: this.player.isCrouching,
       isLit: this.flashlight.isOn,
@@ -569,10 +524,12 @@ export class Game {
         this.retryStep();
         return;
       }
+      const sawHiding = this.monster.sawHiding;
       if (this.hidingSpot) {
         this.leaveHiding();
         this.hud.toast('It saw you hide!');
       }
+      this.noteDeathContext(sawHiding);
       this.startGrab();
       return;
     }
@@ -631,6 +588,13 @@ export class Game {
     this.health = Math.min(this.health + HEALTH_REGEN * dt, MAX_HEALTH);
   }
 
+  /** A bandage. @param {number} amount @returns {boolean} false when not hurt (nothing to heal) */
+  heal(amount) {
+    if (this.health >= MAX_HEALTH - 1) return false;
+    this.health = Math.min(this.health + amount, MAX_HEALTH);
+    return true;
+  }
+
   hurt(amount) {
     this.health = Math.max(this.health - amount, 0);
     this.timeSinceHurt = 0;
@@ -677,6 +641,19 @@ export class Game {
 
   // ---------- grabbed: mash Space to break free ----------
 
+  /** Remembers how it got hold of the player, for the tip on the death screen. @param {boolean} sawHiding */
+  noteDeathContext(sawHiding) {
+    this.deathContext = {
+      spottedBy: this.monster.lastSense,
+      wasLit: this.wasLightOn || this.flashlight.isOn,
+      wasSprinting: this.player.isSprinting,
+      sawHiding,
+      hadLure: this.bag.hasLure,
+      couldFlash: this.flashlight.battery >= FLASH_MIN_BATTERY,
+      struggle: 1,
+    };
+  }
+
   startGrab() {
     this.hurt(GRAB_DAMAGE);
     if (this.health <= 0) {
@@ -685,8 +662,10 @@ export class Game {
     }
     this.state = GameState.GRABBED;
     this.player.enabled = false;
-    this.grab = { time: 0, progress: 0 };
-    this.startCloseUp();
+    this.isMapOpen = false;
+    this.hud.setMap(null);
+    this.grab = { time: 0, progress: 0, best: 0 };
+    this.closeUp.start();
     this.audio.growl();
     this.hud.setPrompt('');
     this.hud.setStruggle(0);
@@ -697,11 +676,12 @@ export class Game {
     grab.time += dt;
     if (this.input.wasPressed('Space')) grab.progress += STRUGGLE_PER_PRESS;
     grab.progress = Math.max(grab.progress - STRUGGLE_DECAY * dt, 0);
+    grab.best = Math.max(grab.best, Math.min(grab.progress, 1));
     this.health = Math.max(this.health - GRAB_DAMAGE_PER_SECOND * dt, 0);
     this.timeSinceHurt = 0;
 
     this.monster.mixer?.update(dt);
-    this.frameCloseUp(GRAB_SHOT, grab.time);
+    this.closeUp.frame(GRAB_SHOT, grab.time);
     this.audio.update(dt, 1);
     this.hud.setStruggle(Math.min(grab.progress, 1));
 
@@ -717,53 +697,8 @@ export class Game {
     this.player.stamina = PLAYER_CONFIG.MAX_STAMINA; // adrenaline
     this.player.isExhausted = false;
     this.player.enabled = !this.isPaused;
-    this.viewModel.setShown(true);
-    this.camera.fov = this._startFov;
-    this.camera.updateProjectionMatrix();
+    this.closeUp.end();
     this.hud.toast('You broke free! RUN!');
-  }
-
-  // ---------- close-up framing shared by the grab and the jumpscare ----------
-
-  /** Turns player and monster to face each other along the line between them, then measures its face. */
-  startCloseUp() {
-    const dx = this.monster.position.x - this.player.position.x;
-    const dz = this.monster.position.z - this.player.position.z;
-    const length = Math.hypot(dx, dz) || 1;
-    this._forward = { x: dx / length, z: dz / length };
-
-    // Same formula for both: player forward is (-sin, -cos), the monster model faces (sin, cos).
-    const yaw = Math.atan2(-this._forward.x, -this._forward.z);
-    this.player.yaw = yaw;
-    this.player.pitch = 0;
-    this.monster.yaw = yaw;
-    this.monster.object.rotation.y = yaw;
-    this.monster.body.rotation.set(0, 0, 0); // no lean, so the face stays where we aim
-
-    const box = new THREE.Box3().setFromObject(this.monster.body);
-    this._faceHeight = box.max.y - (box.max.y - box.min.y) * FACE_FROM_TOP;
-    this._cameraBase.copy(this.camera.position);
-    this._startFov = this.camera.fov;
-    this.viewModel.setShown(false); // arms and flashlight would block the face
-  }
-
-  /** Lunge + zoom: the monster closes in, the lens narrows and rises to its face, the view shakes. */
-  frameCloseUp(shot, time) {
-    const { lerp } = THREE.MathUtils;
-    const ease = Easing.Cubic.Out(Math.min(time / shot.zoomTime, 1)); // fast in, then settles on the face
-
-    const distance = lerp(shot.fromDistance, shot.toDistance, ease);
-    const base = this._cameraBase;
-    this.monster.position.set(base.x + this._forward.x * distance, 0, base.z + this._forward.z * distance);
-
-    this.camera.fov = lerp(this._startFov, shot.fov, ease);
-    this.camera.updateProjectionMatrix();
-
-    const shake = Math.max(0, 1 - time / shot.duration) * shot.shake;
-    const jitter = () => (Math.random() - 0.5) * shake;
-    const eyeY = lerp(base.y, this._faceHeight, ease * shot.rise);
-    this.camera.position.set(base.x + jitter(), eyeY + jitter(), base.z + jitter());
-    this.camera.lookAt(this.monster.position.x, this._faceHeight, this.monster.position.z);
   }
 
   // ---------- endings ----------
@@ -782,10 +717,20 @@ export class Game {
       });
       return;
     }
-    this.hud.showEnd(
-      true,
-      `You made it out on ${this.difficulty.label}. It is still standing in the dark, waiting for the next one...`,
-    );
+    const endingName = endingFor(this.pagesFound, this.totalPages);
+    const ending = ENDINGS[endingName];
+    const recorded = this.recordRun(true, endingName);
+    const best = recorded?.records.bestTimes[this.difficulty.name];
+    this.hud.showEnd(true, ending.text, {
+      title: ending.title,
+      badge: recorded?.isNewBest ? 'New best time!' : null,
+      stats: [
+        ['Escaped in', formatTime(this.runTime)],
+        ['Difficulty', this.difficulty.label],
+        ['Journal', `${this.pagesFound}/${this.totalPages} pages`],
+        ...(best !== undefined ? [['Best time', formatTime(best)]] : []),
+      ],
+    });
   }
 
   startJumpscare() {
@@ -793,27 +738,50 @@ export class Game {
     this.state = GameState.DYING;
     this.shotTime = 0;
     this.health = 0;
+    if (this.deathContext) this.deathContext = { ...this.deathContext, struggle: this.grab.best };
     this.endRun();
     this.hud.setStruggle(null);
-    if (!wasGrabbed) this.startCloseUp(); // when grabbed, keep the framing: it rears back and lunges
+    if (!wasGrabbed) this.closeUp.start(); // when grabbed, keep the framing: it rears back and lunges
     this.audio.scream();
     this.hud.flash();
   }
 
   updateJumpscare(dt) {
     this.shotTime += dt;
-    this.frameCloseUp(JUMPSCARE_SHOT, this.shotTime);
+    this.closeUp.frame(JUMPSCARE_SHOT, this.shotTime);
     if (this.shotTime < JUMPSCARE_SHOT.duration) return;
     this.state = GameState.DEAD;
-    this.hud.showEnd(
-      false,
-      `It caught you on ${this.difficulty.label}. Keys found: ${this.keysFound}/${this.totalKeys}`,
-    );
+    this.recordRun(false, null);
+    this.hud.showEnd(false, `It caught you on ${this.difficulty.label}.`, {
+      stats: [
+        ['Survived', formatTime(this.runTime)],
+        ['Keys', `${this.keysFound}/${this.totalKeys}`],
+        ['Journal', `${this.pagesFound}/${this.totalPages} pages`],
+      ],
+      tip: this.deathContext ? deathTip(this.deathContext) : null,
+    });
+  }
+
+  /**
+   * @param {boolean} isWin @param {import('./story.js').EndingName | null} ending
+   * @returns {import('./records.js').RecordedRun | null} null in the tutorial or without a record book
+   */
+  recordRun(isWin, ending) {
+    if (this.tutorial || !this.recordBook) return null;
+    return this.recordBook.record({
+      isWin,
+      time: this.runTime,
+      difficulty: this.difficulty.name,
+      pagesFound: this.pagesFound,
+      ending,
+    });
   }
 
   /** Stops input and releases the mouse once the run is decided. */
   endRun() {
     this.player.enabled = false;
+    this.isMapOpen = false;
+    this.hud.setMap(null);
     this.audio.setChase(false);
     this.hud.setPrompt('');
     document.exitPointerLock();

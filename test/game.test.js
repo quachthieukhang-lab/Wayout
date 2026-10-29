@@ -6,7 +6,7 @@ import { Input } from '../src/core/input.js';
 import { Tutorial } from '../src/core/tutorial.js';
 import { DIFFICULTIES } from '../src/core/difficulty.js';
 import { STORY_NOTES } from '../src/core/story.js';
-import { KEY_COUNT } from '../src/level/scatter.js';
+import { PAGE_COUNT } from '../src/level/scatter.js';
 import { Player } from '../src/player/player.js';
 import { Flashlight } from '../src/player/flashlight.js';
 import { Monster, MonsterState } from '../src/monster/monster.js';
@@ -29,8 +29,8 @@ const at = (cell) => {
 };
 
 /** A Game on MAP with the real rules, player, monster, doors, radios and pickups. */
-function setup({ tutorial = null, map = MAP, hud = inert() } = {}) {
-  const level = parseLevel(map);
+function setup({ tutorial = null, map = MAP, hud = inert(), extras = {}, recordBook = null } = {}) {
+  const level = { ...parseLevel(map), ...extras };
   const scene = new THREE.Scene();
   const colliders = [];
   const camera = new THREE.PerspectiveCamera();
@@ -45,6 +45,7 @@ function setup({ tutorial = null, map = MAP, hud = inert() } = {}) {
     doors: createDoors(scene, colliders, level),
     radios: createRadios(scene, colliders, level),
     update: () => {},
+    setPower: vi.fn(),
     openExit: vi.fn(),
   };
   const game = new Game({
@@ -60,6 +61,7 @@ function setup({ tutorial = null, map = MAP, hud = inert() } = {}) {
     audio: inert(),
     hud,
     tutorial,
+    recordBook,
   });
   return { game, level, player, monster, world, input, events };
 }
@@ -98,17 +100,17 @@ describe('Game: keys and the exit', () => {
 });
 
 describe('Game: the story', () => {
-  it('has one journal page for every key of a real run', () => {
-    expect(STORY_NOTES).toHaveLength(KEY_COUNT);
+  it('has one journal page for every page scattered in a real run', () => {
+    expect(STORY_NOTES).toHaveLength(PAGE_COUNT);
   });
 
-  it('reveals the journal one page per key, in order, whichever key is found first', () => {
+  it('reveals the journal one page per page found, in order, and none for keys', () => {
     const showNote = vi.fn();
     const { game } = setup({ hud: new Proxy({ showNote }, { get: (target, name) => target[name] ?? (() => {}) }) });
-    const [first, second] = game.pickups.items.filter((item) => item.type === PickupType.KEY);
-    game.pickUp(second);
-    game.pickUp(first);
-    expect(showNote.mock.calls.map(([note]) => note)).toEqual([STORY_NOTES[0], STORY_NOTES[1]]);
+    game.pickUp(game.pickups.items.find((item) => item.type === PickupType.KEY));
+    expect(showNote).not.toHaveBeenCalled();
+    game.revealNote(STORY_NOTES[game.pagesFound++]);
+    expect(showNote).toHaveBeenCalledWith(STORY_NOTES[0]);
   });
 
   it('keeps the journal out of the tutorial', () => {
@@ -262,18 +264,18 @@ describe('Game: the bag', () => {
     game.flashlight.battery = 0.3;
     game.pickUp(battery);
     expect(game.flashlight.battery).toBe(0.3);
-    expect(game.inventory.selectedItem).toBe(battery);
+    expect(game.bag.inventory.selectedItem).toBe(battery);
 
-    game.useSelected();
+    game.bag.useSelected();
     expect(game.flashlight.battery).toBeCloseTo(0.75, 5);
-    expect(game.inventory.selectedItem).toBeNull();
+    expect(game.bag.inventory.selectedItem).toBeNull();
   });
 
   it('keeps the spare battery while the flashlight is still full', () => {
     const { game, battery } = bagSetup();
     game.pickUp(battery);
-    game.useSelected();
-    expect(game.inventory.selectedItem).toBe(battery);
+    game.bag.useSelected();
+    expect(game.bag.inventory.selectedItem).toBe(battery);
   });
 
   it('drops the selected item just in front of the feet, where it can be picked up again', () => {
@@ -281,8 +283,8 @@ describe('Game: the bag', () => {
     game.pickUp(bottle);
     expect(bottle.isTaken).toBe(true);
 
-    game.dropSelected();
-    expect(game.inventory.slots.every((slot) => slot === null)).toBe(true);
+    game.bag.dropSelected();
+    expect(game.bag.inventory.slots.every((slot) => slot === null)).toBe(true);
     expect(bottle.isTaken).toBe(false);
     const offset = Math.hypot(bottle.mesh.position.x - player.position.x, bottle.mesh.position.z - player.position.z);
     expect(offset).toBeCloseTo(0.3, 5);
@@ -291,14 +293,14 @@ describe('Game: the bag', () => {
   it('with a full bag, offers to swap the selected item for the one looked at', () => {
     const { game, battery, bottle, can, secondBottle, spareBattery } = bagSetup();
     [battery, bottle, can, secondBottle].forEach((item) => game.pickUp(item));
-    expect(game.inventory.isFull).toBe(true);
+    expect(game.bag.inventory.isFull).toBe(true);
     const spot = { x: spareBattery.mesh.position.x, z: spareBattery.mesh.position.z };
     vi.spyOn(game.pickups, 'findTarget').mockReturnValue(spareBattery);
 
     const action = game.findInteraction();
     expect(action?.prompt).toMatch(/Swap your bottle for the battery/);
     action.run();
-    expect(game.inventory.selectedItem).toBe(spareBattery);
+    expect(game.bag.inventory.selectedItem).toBe(spareBattery);
     expect(secondBottle.isTaken).toBe(false);
     expect(secondBottle.mesh.position.x).toBeCloseTo(spot.x, 5);
     expect(secondBottle.mesh.position.z).toBeCloseTo(spot.z, 5);
@@ -309,7 +311,7 @@ describe('Game: the bag', () => {
     const [key] = game.pickups.items;
     game.pickUp(key);
     expect(game.keysFound).toBe(1);
-    expect(game.inventory.slots.every((slot) => slot === null)).toBe(true);
+    expect(game.bag.inventory.slots.every((slot) => slot === null)).toBe(true);
   });
 
   it('picks a slot with the number keys and the wheel, and throws what it holds with G', () => {
@@ -317,18 +319,139 @@ describe('Game: the bag', () => {
     game.pickUp(bottle);
     game.pickUp(can);
     press(events, 'Digit1');
-    game.handleItemInput();
-    expect(game.inventory.selectedItem).toBe(bottle);
+    game.bag.handleInput(false);
+    expect(game.bag.inventory.selectedItem).toBe(bottle);
     input.endFrame();
 
     events.dispatchEvent(Object.assign(new Event('wheel'), { deltaY: 100 }));
-    game.handleItemInput();
-    expect(game.inventory.selectedItem).toBe(can);
+    game.bag.handleInput(false);
+    expect(game.bag.inventory.selectedItem).toBe(can);
     input.endFrame();
 
     press(events, 'KeyG');
-    game.handleItemInput();
-    expect(game.inventory.selectedItem).toBeNull();
-    expect(game.throwing.flying.map((flight) => flight.item)).toEqual([can]);
+    game.bag.handleInput(false);
+    expect(game.bag.inventory.selectedItem).toBeNull();
+    expect(game.bag.throwing.flying.map((flight) => flight.item)).toEqual([can]);
+  });
+});
+
+describe('Game: supplies, the journal, tapes and the floor plan', () => {
+  // Spare cells next to the spawn hold the new items.
+  const extras = {
+    bandages: [{ x: 4, z: 1 }],
+    flares: [{ x: 5, z: 1 }],
+    pages: [{ x: 4, z: 2 }],
+    tapes: [{ x: 5, z: 2 }],
+    maps: [{ x: 1, z: 2 }],
+  };
+  const withHud = (spies) => new Proxy(spies, { get: (target, name) => target[name] ?? (() => {}) });
+  const find = (game, type) => game.pickups.items.find((item) => item.type === type);
+
+  it('puts bandages and flares in the bag; a bandage heals only a hurt player', () => {
+    const { game } = setup({ extras });
+    const bandage = find(game, PickupType.BANDAGE);
+    game.pickUp(bandage);
+    expect(game.bag.inventory.selectedItem).toBe(bandage);
+    game.bag.useSelected();
+    expect(game.bag.inventory.selectedItem).toBe(bandage); // not hurt: kept
+
+    game.health = 30;
+    game.bag.useSelected();
+    expect(game.health).toBe(75);
+    expect(game.bag.inventory.selectedItem).toBeNull();
+  });
+
+  it('lights a flare as it is thrown; where it lands it lures the monster', () => {
+    const { game, monster } = setup({ extras });
+    const flare = find(game, PickupType.FLARE);
+    game.pickUp(flare);
+    game.bag.useSelected();
+    expect(game.bag.flares.burning?.item).toBe(flare);
+    expect(game.bag.throwing.flying.map((flight) => flight.item)).toEqual([flare]);
+
+    const hear = vi.spyOn(monster, 'hearNoise');
+    game.bag.updateFlares(DT);
+    expect(hear).toHaveBeenCalledWith(flare.mesh.position, expect.any(Number), true);
+  });
+
+  it('dazzles the monster that walks up to a burning flare', () => {
+    const { game, monster } = setup({ extras });
+    const flare = find(game, PickupType.FLARE);
+    game.pickUp(flare);
+    game.bag.useSelected();
+    monster.position.copy(flare.mesh.position);
+    game.bag.updateFlares(DT);
+    expect(monster.state).toBe(MonsterState.STUNNED);
+  });
+
+  it('reads journal pages in order and counts them, and plays a tape out loud', () => {
+    const showNote = vi.fn();
+    const { game, monster } = setup({ extras, hud: withHud({ showNote }) });
+    game.pickUp(find(game, PickupType.PAGE));
+    expect(game.pagesFound).toBe(1);
+    expect(showNote).toHaveBeenLastCalledWith(STORY_NOTES[0]);
+
+    const hear = vi.spyOn(monster, 'hearNoise');
+    game.pickUp(find(game, PickupType.TAPE));
+    expect(showNote.mock.lastCall?.[0].kind).toBe('tape');
+    expect(hear).toHaveBeenCalled(); // the monster might hear it too
+  });
+
+  it('opens the floor plan with M only once it is found', () => {
+    const toast = vi.fn();
+    const setMap = vi.fn();
+    const { game, events } = setup({ extras, hud: withHud({ toast, setMap }) });
+    const pressM = () => {
+      events.dispatchEvent(Object.assign(new Event('keydown'), { code: 'KeyM' }));
+      events.dispatchEvent(Object.assign(new Event('keyup'), { code: 'KeyM' }));
+      game.updateMap();
+      game.input.endFrame();
+    };
+    pressM();
+    expect(game.isMapOpen).toBe(false);
+    expect(toast).toHaveBeenLastCalledWith(expect.stringMatching(/no map/));
+
+    game.pickUp(find(game, PickupType.MAP));
+    pressM();
+    expect(game.isMapOpen).toBe(true);
+    expect(setMap).toHaveBeenLastCalledWith(expect.objectContaining({ isExitOpen: false }));
+  });
+});
+
+describe('Game: the end of a run', () => {
+  it('records an escape, picks the ending by the pages read, and shows the time', () => {
+    vi.stubGlobal('document', { exitPointerLock: vi.fn() });
+    const showEnd = vi.fn();
+    const record = vi.fn(() => ({ isNewBest: true, previousBest: null, records: { bestTimes: { normal: 42 } } }));
+    const hud = new Proxy({ showEnd }, { get: (target, name) => target[name] ?? (() => {}) });
+    const { game, player, level } = setup({ hud, recordBook: { records: null, record } });
+    game.runTime = 42;
+    game.openExit();
+    player.position.copy(at(level.exit));
+    game.checkEscape();
+
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({ isWin: true, time: 42, ending: 'blind' }));
+    const [[isWin, , extras]] = showEnd.mock.calls;
+    expect(isWin).toBe(true);
+    expect(extras.title).toBe('YOU RAN'); // no journal pages read
+    expect(extras.badge).toMatch(/best/i);
+    expect(extras.stats).toContainEqual(['Escaped in', '0:42']);
+  });
+
+  it('after a death, shows how long the player lasted and a tip for next time', () => {
+    vi.stubGlobal('document', { exitPointerLock: vi.fn() });
+    const showEnd = vi.fn();
+    const hud = new Proxy({ showEnd }, { get: (target, name) => target[name] ?? (() => {}) });
+    const { game, monster } = setup({ hud });
+    game.runTime = 95;
+    vi.spyOn(monster, 'update').mockReturnValue('caught');
+    game.updateMonster(DT);
+    for (let t = 0; t < 6 && game.state === GameState.GRABBED; t += DT) game.updateGrab(DT);
+    for (let t = 0; t < 2.1 && game.state === GameState.DYING; t += DT) game.updateJumpscare(DT);
+
+    const [[isWin, , extras]] = showEnd.mock.calls;
+    expect(isWin).toBe(false);
+    expect(extras.stats).toContainEqual(['Survived', '1:35']);
+    expect(extras.tip).toMatch(/Space/); // it never mashed Space
   });
 });

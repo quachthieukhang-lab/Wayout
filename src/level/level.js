@@ -10,6 +10,7 @@
 //   D  double door in a doorway: closed, it blocks sight and the player; the monster forces it open
 //   G  broken glass, W  loose floorboards: a careless step is loud (crouch or walk quietly over them)
 //   R  radio on a crate: switch it on to lure the monster
+//   X  locked door, Z  collapsed ceiling: solid for everyone (placed at random per run by blockPassages)
 export const CELL_SIZE = 3;
 export const WALL_HEIGHT = 3.4;
 
@@ -39,6 +40,9 @@ export const LEVEL_MAP = Object.freeze([
   '#############################',
 ]);
 
+/** Dr. Marrow's office: his last tape always lies here, and the walls say what he could not. */
+export const MARROW_OFFICE = 'DR. MARROW';
+
 /**
  * Rooms of LEVEL_MAP as cell rectangles (inclusive), each painted its own colour so the player can tell them apart.
  * A rectangle may include wall cells; only its floor cells count. Doorways between a room and a hall belong to neither.
@@ -54,7 +58,7 @@ export const ROOMS = Object.freeze([
   { name: 'LOBBY', color: 0x8a4a6a, isHall: false, x0: 8, z0: 9, x1: 18, z1: 13 },
   { name: 'SURGERY', color: 0x3a8a86, isHall: false, x0: 19, z0: 9, x1: 27, z1: 13 },
   { name: 'SOUTH HALL', color: 0x9a6a20, isHall: true, x0: 1, z0: 15, x1: 27, z1: 15 },
-  { name: 'OFFICE', color: 0x6a5a92, isHall: false, x0: 1, z0: 17, x1: 13, z1: 19 },
+  { name: MARROW_OFFICE, color: 0x6a5a92, isHall: false, x0: 1, z0: 17, x1: 13, z1: 19 },
   { name: 'MORGUE', color: 0xa8b4ba, isHall: false, x0: 15, z0: 17, x1: 27, z1: 19 },
 ]);
 
@@ -63,8 +67,8 @@ export function roomAt(rooms, cell) {
   return rooms.find((r) => cell.x >= r.x0 && cell.x <= r.x1 && cell.z >= r.z0 && cell.z <= r.z1) ?? null;
 }
 
-const BLOCKING_TILES = new Set(['#', 'E', 'S', 'T']);
-const OPAQUE_TILES = new Set(['#', 'E', 'S']);
+const BLOCKING_TILES = new Set(['#', 'E', 'S', 'T', 'X', 'Z']);
+const OPAQUE_TILES = new Set(['#', 'E', 'S', 'X', 'Z']);
 /** @type {[number, number][]} */
 const DIRECTIONS = [
   [1, 0],
@@ -79,7 +83,8 @@ const DIRECTIONS = [
  *   width: number, height: number, tiles: readonly string[], walls: boolean[][], opaque: boolean[][],
  *   floorCells: Cell[], monsterCells: Cell[], spawn: Cell, monsterSpawn: Cell, exit: Cell,
  *   keys: Cell[], batteries: Cell[], lamps: Cell[], vents: Cell[], shelves: Cell[], beds: Cell[], lockers: Cell[],
- *   throwables: Cell[], doors: Cell[], radios: Cell[], noisyFloors: Cell[]
+ *   throwables: Cell[], doors: Cell[], radios: Cell[], noisyFloors: Cell[], lockedDoors: Cell[], barricades: Cell[],
+ *   pages: Cell[], tapes: Cell[], maps: Cell[], bandages: Cell[], flares: Cell[]
  * }} Level
  */
 
@@ -116,6 +121,14 @@ export function parseLevel(rows) {
     doors: [],
     radios: [],
     noisyFloors: [],
+    lockedDoors: [],
+    barricades: [],
+    // filled in by scatterItems:
+    pages: [],
+    tapes: [],
+    maps: [],
+    bandages: [],
+    flares: [],
   };
   const markers = { P: 'spawn', M: 'monsterSpawn', E: 'exit' };
   const lists = {
@@ -131,6 +144,8 @@ export function parseLevel(rows) {
     R: level.radios,
     G: level.noisyFloors,
     W: level.noisyFloors,
+    X: level.lockedDoors,
+    Z: level.barricades,
   };
 
   rows.forEach((row, z) => {
@@ -189,6 +204,20 @@ export const NOISY_FLOORS = Object.freeze({
  */
 export function noisyFloorAt(level, x, z) {
   return (isInside(level, x, z) && NOISY_FLOORS[level.tiles[z][x]]) || null;
+}
+
+/**
+ * How a spot echoes: a long hall, a room, or something tight (a vent). Null in a doorway, which is neither.
+ * @typedef {'room' | 'hall' | 'tight'} Space
+ * @param {Level} level @param {readonly Room[]} rooms @param {{ x: number, z: number }} position world space
+ * @returns {Space | null}
+ */
+export function spaceAt(level, rooms, position) {
+  const cell = worldToCell(position.x, position.z);
+  if (isVent(level, cell.x, cell.z)) return 'tight';
+  const room = roomAt(rooms, cell);
+  if (!room) return null;
+  return room.isHall ? 'hall' : 'room';
 }
 
 /** @param {Level} level @param {number} x @param {number} z */

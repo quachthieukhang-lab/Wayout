@@ -1,3 +1,5 @@
+import { createMapView } from './map-view.js';
+
 const TOAST_DURATION_MS = 3500;
 const NOTE_DURATION_MS = 14000; // long enough to read a journal page while moving
 const GRAIN_SIZE = 160;
@@ -20,9 +22,17 @@ const ITEM_ICONS = Object.freeze({
   can: `${SVG_OPEN}<rect x="7" y="4" width="10" height="16" rx="2"/><path d="M7 7.5h10M7 16.5h10"/></svg>`,
   battery: `${SVG_OPEN}<rect x="7.5" y="5" width="9" height="16" rx="1.5"/><path d="M10.5 3h3v2h-3z"/><path d="M12.8 9l-2 4h2.6l-2 4"/></svg>`,
   key: `${SVG_OPEN}<circle cx="7" cy="12" r="3.5"/><path d="M10.5 12H21M17.5 12v3M20.5 12v2.5"/></svg>`,
+  bandage: `${SVG_OPEN}<rect x="3" y="8" width="18" height="8" rx="4" transform="rotate(-35 12 12)"/><path d="M10 10.5l1 1M12 12.5l1 1M10.5 13l1-1"/></svg>`,
+  flare: `${SVG_OPEN}<rect x="9.5" y="7" width="5" height="14" rx="1"/><path d="M9.5 10h5"/><path d="M12 6c-1.5-1.5-1-3 0-4 1 1 1.5 2.5 0 4z"/></svg>`,
 });
 /** What G / click does with the selected item. */
-const ITEM_ACTIONS = Object.freeze({ bottle: 'Throw', can: 'Throw', battery: 'Put in flashlight' });
+const ITEM_ACTIONS = Object.freeze({
+  bottle: 'Throw',
+  can: 'Throw',
+  battery: 'Put in flashlight',
+  bandage: 'Patch yourself up',
+  flare: 'Light and throw',
+});
 
 /** DOM HUD: keys, the vitals meters, the bag's slots, prompts, screen effects and the start / end screens. */
 export function createHud() {
@@ -52,6 +62,14 @@ export function createHud() {
     endHint: $('end-hint'),
     endTitle: $('end-title'),
     endText: $('end-text'),
+    endBadge: $('end-badge'),
+    endStats: $('end-stats'),
+    endTip: $('end-tip'),
+    records: $('records'),
+    map: $('map'),
+    mapCanvas: /** @type {HTMLCanvasElement} */ ($('map-canvas')),
+    pages: $('hud-pages'),
+    pageCount: $('hud-page-count'),
     hud: $('hud'),
     health: $('hud-health'),
     struggle: $('struggle'),
@@ -87,6 +105,8 @@ export function createHud() {
   /** @type {(string | null)[]} what the slots held last time, so a newly filled one can light up */
   let lastSlots = [];
   let hasStarted = false; // after the first start, pausing shows the pause menu instead of the title screen
+  /** @type {ReturnType<typeof createMapView> | null} */
+  let mapView = null;
   // The settings form lives on the title screen; the pause menu borrows it while its Settings view is open.
   const settingsHome = { parent: el.settings.parentElement, next: el.settings.nextSibling };
 
@@ -180,8 +200,26 @@ export function createHud() {
       });
     },
 
+    /** Best runs so far, on the title screen. @param {string} text empty hides the line */
+    setRecords(text) {
+      el.records.textContent = text;
+      el.records.classList.toggle('hidden', text === '');
+    },
+
+    /** The floor plan of this run, drawn once. @param {import('../level/level.js').Level} level @param {readonly import('../level/level.js').Room[]} rooms */
+    initMap(level, rooms) {
+      mapView = createMapView(el.mapCanvas, level, rooms);
+    },
+
+    /** @param {{ x: number, z: number, yaw: number, isExitOpen: boolean } | null} view the player on the map; null closes it */
+    setMap(view) {
+      set('mapOpen', view !== null, (isOpen) => el.map.classList.toggle('hidden', !isOpen));
+      if (view) mapView?.draw(view);
+    },
+
     /**
-     * @param {{ health: number, keysFound: number, totalKeys: number, battery: number, stamina: number, isExhausted: boolean,
+     * @param {{ health: number, keysFound: number, totalKeys: number, pagesFound: number, totalPages: number,
+     *   battery: number, stamina: number, isExhausted: boolean,
      *   danger: number, alert: 'hidden' | 'calm' | 'suspicious' | 'hunted' | 'seen', awareness: number, noise: number,
      *   inventory: { slots: (string | null)[], selected: number } }} status `inventory`: the item kind in each bag slot
      */
@@ -189,6 +227,8 @@ export function createHud() {
       health,
       keysFound,
       totalKeys,
+      pagesFound,
+      totalPages,
       battery,
       stamina,
       isExhausted,
@@ -205,6 +245,10 @@ export function createHud() {
       set('keys', `${keysFound}/${totalKeys}`, (text) => {
         renderKeys(el.keyIcons, keysFound, totalKeys);
         el.keyCount.textContent = text;
+      });
+      set('pages', `${pagesFound}/${totalPages}`, (text) => {
+        el.pages.classList.toggle('hidden', pagesFound === 0); // the journal is a secret until a page turns up
+        el.pageCount.textContent = text;
       });
       set('inventory', `${inventory.slots.join(',')}|${inventory.selected}`, () => {
         renderSlots(el.slots, inventory, lastSlots);
@@ -271,6 +315,7 @@ export function createHud() {
     showNote(note) {
       el.noteTitle.textContent = note.title;
       el.noteText.textContent = note.text;
+      el.note.classList.toggle('tape', note.kind === 'tape');
       el.note.classList.remove('hidden', 'visible');
       void el.note.offsetWidth; // restart the fade-in
       el.note.classList.add('visible');
@@ -278,6 +323,7 @@ export function createHud() {
       noteTimeout = setTimeout(() => el.note.classList.remove('visible'), NOTE_DURATION_MS);
 
       const entry = document.createElement('article');
+      entry.classList.toggle('tape', note.kind === 'tape');
       const title = document.createElement('h3');
       title.textContent = note.title;
       const text = document.createElement('p');
@@ -294,10 +340,40 @@ export function createHud() {
       el.flash.classList.add('active');
     },
 
-    /** @param {boolean} isWin @param {string} text @param {{ title?: string, hint?: string }} [labels] */
-    showEnd(isWin, text, { title = isWin ? 'YOU ESCAPED' : 'YOU DIED', hint = 'Click to play again' } = {}) {
+    /**
+     * @param {boolean} isWin @param {string} text
+     * @param {{ title?: string, hint?: string, badge?: string | null, stats?: string[][], tip?: string | null }} [extras]
+     *   `stats`: [label, value] rows; `badge`: e.g. a new record; `tip`: a lesson after a death
+     */
+    showEnd(
+      isWin,
+      text,
+      {
+        title = isWin ? 'YOU ESCAPED' : 'YOU DIED',
+        hint = 'Click to play again',
+        badge = null,
+        stats = [],
+        tip = null,
+      } = {},
+    ) {
       el.endTitle.textContent = title;
       el.endHint.textContent = hint;
+      el.endBadge.textContent = badge ?? '';
+      el.endBadge.classList.toggle('hidden', !badge);
+      el.endTip.textContent = tip ? `Tip: ${tip}` : '';
+      el.endTip.classList.toggle('hidden', !tip);
+      el.endStats.replaceChildren(
+        ...stats.map(([label, value]) => {
+          const row = document.createElement('div');
+          const term = document.createElement('dt');
+          term.textContent = label;
+          const detail = document.createElement('dd');
+          detail.textContent = value;
+          row.append(term, detail);
+          return row;
+        }),
+      );
+      el.map.classList.add('hidden');
       el.objective.classList.add('hidden');
       el.note.classList.add('hidden');
       el.endText.textContent = text;

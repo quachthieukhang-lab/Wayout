@@ -5,6 +5,9 @@ import { createLockers } from './lockers.js';
 import { createDoors } from './doors.js';
 import { createRadios } from './radios.js';
 import { addRoomPaint } from './rooms.js';
+import { createObstacles } from './obstacles.js';
+import { WALL_WRITINGS, OFFICE_WRITINGS } from '../core/story.js';
+import { MARROW_OFFICE } from '../level/level.js';
 import {
   createRng,
   createWallTexture,
@@ -39,7 +42,6 @@ const DOOR_OPEN_SPEED = 0.8; // m/s
 const VENT_CLEARANCE = 1.2; // crouched player is 1.0 m tall, standing 1.8 m
 
 const BLOOD_DECALS = 14;
-const WALL_MESSAGES = ['RUN', 'IT CAN HEAR YOU', 'LIGHTS OFF', 'IT IS HERE', '5 KEYS'];
 const DIRECTIONS = [
   [1, 0],
   [-1, 0],
@@ -67,14 +69,19 @@ export function createWorld(level, rooms = [], seed = 7) {
   const lockers = createLockers(scene, colliders, level, rng);
   const doors = createDoors(scene, colliders, level);
   const radios = createRadios(scene, colliders, level);
+  const obstacles = createObstacles(scene, colliders, level, rng);
   addNoisyFloors(scene, level, rng);
   addBloodDecals(scene, level, rng);
-  addWallMessages(scene, level, rng);
+  const office = rooms.find((room) => room.name === MARROW_OFFICE) ?? null;
+  const isInOffice = (cell) => office !== null && roomAt([office], cell) !== null;
+  addWallMessages(scene, level, WALL_WRITINGS, (cell) => !isInOffice(cell), rng);
+  if (office) addWallMessages(scene, level, OFFICE_WRITINGS, isInOffice, rng);
   addRoomPaint(scene, level, rooms, rng);
   const lamps = level.lamps.map((cell) =>
     createLamp(scene, cell, rng() < BROKEN_LAMP_CHANCE, lampColor(roomAt(rooms, cell))),
   );
   const exit = createExitDoor(scene, colliders, level);
+  let isPowered = true;
 
   return {
     scene,
@@ -82,11 +89,16 @@ export function createWorld(level, rooms = [], seed = 7) {
     lockers,
     doors,
     radios,
+    isNearLockedDoor: obstacles.isNearLockedDoor,
     /** @param {number} dt */
     update(dt) {
-      lamps.forEach((lamp) => lamp.update(dt));
+      lamps.forEach((lamp) => lamp.update(dt, isPowered));
       exit.update(dt);
       doors.update(dt);
+    },
+    /** A blackout: every lamp goes dark (the exit sign runs on its own battery). @param {boolean} isOn */
+    setPower(isOn) {
+      isPowered = isOn;
     },
     openExit: () => exit.open(),
   };
@@ -211,10 +223,15 @@ function addBloodDecals(scene, level, rng) {
   }
 }
 
-/** Writes messages on random wall faces that border a floor cell. */
-function addWallMessages(scene, level, rng) {
+/**
+ * Writes messages on random wall faces that border a floor cell.
+ * @param {THREE.Scene} scene @param {import('../level/level.js').Level} level @param {readonly string[]} messages
+ * @param {(cell: import('../level/level.js').Cell) => boolean} isWhere which floor cells may get one
+ * @param {() => number} rng
+ */
+function addWallMessages(scene, level, messages, isWhere, rng) {
   const faces = level.floorCells
-    .filter((cell) => level.tiles[cell.z][cell.x] !== 'H')
+    .filter((cell) => level.tiles[cell.z][cell.x] !== 'H' && isWhere(cell))
     .flatMap((cell) =>
       DIRECTIONS.filter(([dx, dz]) => isWallTile(level, cell.x + dx, cell.z + dz)).map(([dx, dz]) => ({
         cell,
@@ -224,7 +241,8 @@ function addWallMessages(scene, level, rng) {
     );
   const geometry = new THREE.PlaneGeometry(2.4, 1.2);
 
-  WALL_MESSAGES.forEach((text) => {
+  messages.forEach((text) => {
+    if (faces.length === 0) return;
     const [{ cell, dx, dz }] = faces.splice(Math.floor(rng() * faces.length), 1);
     const { x, z } = cellToWorld(cell);
     const decal = new THREE.Mesh(geometry, decalMaterial(createMessageTexture(text, rng)));
@@ -257,7 +275,15 @@ function createLamp(scene, cell, isBroken, color) {
   let isOn = true;
   let timer = 0;
   return {
-    update(dt) {
+    /** @param {number} dt @param {boolean} isPowered false during a blackout */
+    update(dt, isPowered) {
+      if (!isPowered) {
+        // Intensity 0, never `visible = false`: changing the light count would recompile every shader.
+        light.intensity = 0;
+        material.emissiveIntensity = 0;
+        timer = 0; // flickers straight back on when the power returns
+        return;
+      }
       timer -= dt;
       if (timer > 0) return;
       isOn = !isOn;

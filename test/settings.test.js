@@ -20,6 +20,14 @@ describe('parseSettings', () => {
     expect(parseSettings({ difficulty: 2 }).difficulty).toBe('normal');
   });
 
+  it('keeps a known graphics level, and turns the old High switch being off into Medium', () => {
+    expect(parseSettings({ graphics: 'low' }).graphics).toBe('low');
+    expect(parseSettings({ graphics: 'ultra' }).graphics).toBe('high');
+    expect(parseSettings({ isHighQuality: false }).graphics).toBe('medium');
+    expect(parseSettings({ isHighQuality: true }).graphics).toBe('high');
+    expect(parseSettings({ isHighQuality: false })).not.toHaveProperty('isHighQuality');
+  });
+
   it('fills in missing fields and survives garbage', () => {
     expect(parseSettings({ fov: 80 })).toEqual({ ...DEFAULT_SETTINGS, fov: 80 });
     expect(parseSettings(null)).toEqual(DEFAULT_SETTINGS);

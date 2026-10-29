@@ -13,6 +13,13 @@ const PATROL_SPEED = 1.4;
 const SEARCH_SPEED = 2.0;
 const CHASE_SPEED = 3.7;
 const RAGE_SPEED_BONUS = 0.15; // per key the player has found
+// It learns as the keys go: each key found sharpens its senses and its searching.
+const SMARTS_PER_KEY = Object.freeze({ sight: 0.06, hearing: 0.08, search: 0.15, hunt: 0.05 });
+export const PREDICT_KEYS = 2; // from this many keys it heads where you were running, not where it lost you
+export const WARY_KEYS = 3; // from this many keys it ignores a lure that comes too soon after the last one
+export const LURE_WARINESS = 15; // s
+const PREDICT_TIME = 1.5; // s of the player's last movement it extrapolates
+const PREDICT_STEP = 0.5; // m between the points it checks along that line
 
 const SIGHT_RANGE = 8;
 const LIT_SIGHT_RANGE = 13; // a lit flashlight gives the player away
@@ -62,7 +69,8 @@ const EYE_LOOK = Object.freeze({
 });
 
 /**
- * @typedef {{ position: THREE.Vector3, noiseRadius: number, isCrouching: boolean, isLit: boolean, isHidden?: boolean }} MonsterTarget
+ * @typedef {{ position: THREE.Vector3, noiseRadius: number, isCrouching: boolean, isLit: boolean, isHidden?: boolean,
+ *   velocity?: { x: number, z: number } }} MonsterTarget
  * @typedef {'spotted' | 'caught' | null} MonsterEvent
  */
 
@@ -98,6 +106,11 @@ export class Monster {
     this.awareness = 0; // 0..1, reaching 1 starts a chase
     this.lastKnown = new THREE.Vector3();
     this.rage = 0;
+    this.clock = 0; // s it has been awake, for remembering lures
+    this.lastLureTime = -Infinity;
+    /** @type {'sight' | 'hearing' | null} how it last became sure of the player */
+    this.lastSense = null;
+    this.lastVelocity = new THREE.Vector3(); // the player's movement the last time it perceived them mid-chase
     this.isDormant = false; // asleep out of sight until the tutorial wakes it
     this.patrolCells = level.monsterCells; // where it may wander; the tutorial pens it in
     this.speedScale = 1; // difficulty
@@ -120,9 +133,18 @@ export class Monster {
     this.mixer = model.userData.mixer ?? null;
   }
 
-  /** @param {number} rage how many keys the player has found */
+  /** @param {number} rage how many keys the player has found: it gets faster and smarter */
   setRage(rage) {
     this.rage = rage;
+  }
+
+  /** @param {keyof typeof SMARTS_PER_KEY} sense @returns {number} multiplier from the keys found so far */
+  smarts(sense) {
+    return 1 + this.rage * SMARTS_PER_KEY[sense];
+  }
+
+  get searchDuration() {
+    return SEARCH_DURATION * this.smarts('search');
   }
 
   /** @param {import('../core/difficulty.js').Difficulty} difficulty */
@@ -179,12 +201,15 @@ export class Monster {
    * takes the bait only once it has lost sight of the player.
    * @param {{ x: number, z: number }} position
    * @param {number} radius how far the noise carries in the open (m)
+   * @param {boolean} [isLure] thrown, a radio, a flare: once it has learned enough, it stops falling for one after another
    * @returns {boolean} whether it heard and went for it
    */
-  hearNoise(position, radius) {
+  hearNoise(position, radius, isLure = false) {
     if (this.state === MonsterState.STUNNED || (this.state === MonsterState.CHASE && this.isPerceiving)) return false;
+    if (isLure && this.isWaryOfLures) return false;
     const muffle = hasLineOfSight(this.level, this.position, position) ? 1 : WALL_MUFFLE;
     if (this.distanceTo(position) > radius * muffle) return false; // difficulty scales the player's noise, not lures
+    if (isLure) this.lastLureTime = this.clock;
 
     const point = new THREE.Vector3(position.x, 0, position.z);
     if (this.state === MonsterState.CHASE) {
@@ -194,6 +219,11 @@ export class Monster {
       this.investigate(point);
     }
     return true;
+  }
+
+  /** It took a lure only a moment ago and has learned not to take the next one. */
+  get isWaryOfLures() {
+    return this.rage >= WARY_KEYS && this.clock - this.lastLureTime < LURE_WARINESS;
   }
 
   /**
@@ -214,7 +244,7 @@ export class Monster {
   investigate(position) {
     if (this.state === MonsterState.CHASE || this.state === MonsterState.STUNNED) return;
     this.state = MonsterState.SEARCH;
-    this.searchTimer = SEARCH_DURATION;
+    this.searchTimer = this.searchDuration;
     this.lastKnown.copy(position);
     this.path = this.pathTo(worldToCell(position.x, position.z));
   }
@@ -237,6 +267,7 @@ export class Monster {
    * @returns {MonsterEvent}
    */
   update(dt, target) {
+    this.clock += dt;
     if (this.isDormant) {
       this.speed = 0;
       this.eyeLight.intensity = 0;
@@ -255,11 +286,18 @@ export class Monster {
     const isExposed = this.updateHiding(Boolean(target.isHidden), distance, hasClearLine);
     if (distance < CATCH_DISTANCE && hasClearLine && !this.isTargetInVent && isExposed) return 'caught';
 
-    const hearingRadius = (hasClearLine ? target.noiseRadius : target.noiseRadius * WALL_MUFFLE) * this.hearingScale;
+    const hearingRadius =
+      (hasClearLine ? target.noiseRadius : target.noiseRadius * WALL_MUFFLE) *
+      this.hearingScale *
+      this.smarts('hearing');
     const isHeard = isExposed && distance < hearingRadius;
     const isSeen = isExposed && this.canSee(target, distance, hasClearLine);
     const event = this.updateAwareness(dt, isSeen, isHeard, distance, target.position);
     const isPerceived = this.state === MonsterState.CHASE && (isSeen || isHeard);
+    if (isPerceived && target.velocity) this.lastVelocity.set(target.velocity.x, 0, target.velocity.z);
+    if (this.isPerceiving && !isPerceived && this.state === MonsterState.CHASE && this.rage >= PREDICT_KEYS) {
+      this.predictEscape();
+    }
     this.isPerceiving = isPerceived;
 
     this._previous.copy(this.position);
@@ -304,6 +342,7 @@ export class Monster {
     this.awareness += gain * dt;
     if (this.awareness >= 1) {
       this.awareness = 0;
+      this.lastSense = isSeen ? 'sight' : 'hearing';
       this.alert(position);
       this.reactTimer = REACTION_TIME;
       return 'spotted';
@@ -320,7 +359,26 @@ export class Monster {
     this.body.rotation.x = THREE.MathUtils.damp(this.body.rotation.x, -0.3, 8, dt);
     if (this.stunTimer > 0) return;
     this.state = MonsterState.SEARCH;
-    this.searchTimer = SEARCH_DURATION;
+    this.searchTimer = this.searchDuration;
+  }
+
+  /**
+   * It lost the player mid-chase: instead of the spot where it last perceived them, it heads for where they were
+   * running, as far along that line as it can walk and see.
+   */
+  predictEscape() {
+    const speed = Math.hypot(this.lastVelocity.x, this.lastVelocity.z);
+    if (speed < 0.1) return;
+    const reach = speed * PREDICT_TIME;
+    const from = this.lastKnown.clone();
+    const point = new THREE.Vector3();
+    for (let travelled = PREDICT_STEP; travelled <= reach; travelled += PREDICT_STEP) {
+      point.copy(from).addScaledVector(this.lastVelocity, travelled / speed);
+      const cell = worldToCell(point.x, point.z);
+      if (!isMonsterWalkable(this.level, cell.x, cell.z) || !hasLineOfSight(this.level, from, point)) break;
+      this.lastKnown.copy(point);
+    }
+    this.repathTimer = 0;
   }
 
   /**
@@ -329,7 +387,7 @@ export class Monster {
    * @param {boolean} [hasClearLine] precomputed line of sight, if the caller already has it
    */
   canSee(target, distance, hasClearLine) {
-    let range = target.isLit ? LIT_SIGHT_RANGE : SIGHT_RANGE;
+    let range = (target.isLit ? LIT_SIGHT_RANGE : SIGHT_RANGE) * this.smarts('sight');
     if (target.isCrouching) range *= CROUCH_SIGHT_FACTOR;
     if (distance > range) return false;
 
@@ -376,7 +434,7 @@ export class Monster {
     }
     if (this.followPath(speed, dt) && !isPerceived) {
       this.state = MonsterState.SEARCH;
-      this.searchTimer = SEARCH_DURATION;
+      this.searchTimer = this.searchDuration;
       this.path = [];
     }
   }
@@ -397,7 +455,7 @@ export class Monster {
     if (!this.followPath(PATROL_SPEED * this.speedScale, dt)) return;
     const isRoaming = this.patrolCells === this.level.monsterCells; // a penned-in monster does not drift toward you
     const goal =
-      isRoaming && this.rng() < HUNT_CHANCE
+      isRoaming && this.rng() < HUNT_CHANCE + this.rage * SMARTS_PER_KEY.hunt
         ? this.randomCellNear(worldToCell(target.position.x, target.position.z), HUNT_RADIUS)
         : this.patrolCells[Math.floor(this.rng() * this.patrolCells.length)];
     this.path = this.pathTo(goal);

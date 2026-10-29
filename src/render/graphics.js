@@ -13,15 +13,35 @@ import {
 const BLOOM = Object.freeze({ intensity: 0.5, radius: 0.6, luminanceThreshold: 6, luminanceSmoothing: 1 });
 const MSAA_SAMPLES = 4; // render targets skip the canvas' antialias, so ask for it here
 
+/** @type {Readonly<Record<import('../core/settings.js').GraphicsLevel, Readonly<{ maxPixelRatio: number,
+ *   isBloomOn: boolean, multisampling: number, flashlightShadow: number, castsFlashlightShadow: boolean,
+ *   castsEyeShadow: boolean }>>>} */
 const QUALITY = Object.freeze({
   high: {
     maxPixelRatio: 1.5,
     isBloomOn: true,
     multisampling: MSAA_SAMPLES,
     flashlightShadow: 1024,
+    castsFlashlightShadow: true,
     castsEyeShadow: true,
   },
-  low: { maxPixelRatio: 1, isBloomOn: false, multisampling: 0, flashlightShadow: 512, castsEyeShadow: false },
+  medium: {
+    maxPixelRatio: 1,
+    isBloomOn: false,
+    multisampling: 0,
+    flashlightShadow: 512,
+    castsFlashlightShadow: true,
+    castsEyeShadow: false,
+  },
+  // Weak laptops and integrated GPUs: fewer pixels than the screen has, and no shadow maps at all.
+  low: {
+    maxPixelRatio: 0.75,
+    isBloomOn: false,
+    multisampling: 0,
+    flashlightShadow: 512,
+    castsFlashlightShadow: false,
+    castsEyeShadow: false,
+  },
 });
 
 /**
@@ -59,9 +79,13 @@ export function createGraphics(renderer, scene, camera, shadowLights) {
     bloom,
     resize,
 
-    /** Applied from the pause menu, so the shader recompile it may cause goes unnoticed. @param {boolean} isHigh */
-    setQuality(isHigh) {
-      quality = isHigh ? QUALITY.high : QUALITY.low;
+    /**
+     * Applied from the pause menu, so the shader recompile it may cause goes unnoticed.
+     * @param {import('../core/settings.js').GraphicsLevel} level
+     */
+    setQuality(level) {
+      quality = QUALITY[level] ?? QUALITY.high;
+      shadowLights.flashlight.castShadow = quality.castsFlashlightShadow;
       composer.removePass(effectPass);
       effectPass = quality.isBloomOn ? effectPasses.withBloom : effectPasses.plain;
       composer.addPass(effectPass);
