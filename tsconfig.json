@@ -10,7 +10,8 @@
     "checkJs": true,
     "noEmit": true,
     "strict": false,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "resolveJsonModule": true // the game shows package.json's version
   },
   "include": ["src/**/*.js"]
 }

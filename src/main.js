@@ -19,6 +19,7 @@ import { TUTORIAL_MAP, TUTORIAL_ROOMS } from './level/tutorial-map.js';
 import { Tutorial } from './core/tutorial.js';
 import { createGraphics } from './render/graphics.js';
 import { createDust } from './world/dust.js';
+import { version } from '../package.json';
 
 const MAX_DT = 0.05;
 // Chromium sometimes reports a huge movementX/Y right after the pointer is captured; real moves are far smaller.
@@ -81,6 +82,9 @@ if (import.meta.env.DEV) {
 const pickups = createPickups(scene, level);
 const audio = new HorrorAudio(camera, scene);
 const hud = createHud();
+document.querySelectorAll('[data-version]').forEach((label) => {
+  label.textContent = `v${version}`;
+});
 const tutorial = isTutorial ? new Tutorial() : null;
 const game = new Game({
   level,
@@ -158,6 +162,7 @@ hud.onMenuAction((action) => {
 // Firefox reports a refused capture only through this event; Chrome and Edge also reject the promise (see lockPointer).
 document.addEventListener('pointerlockerror', () => hud.showResumeRetry());
 document.addEventListener('pointerlockchange', () => {
+  input.isCapturing = document.pointerLockElement === renderer.domElement; // browser shortcuts only work in menus
   if (game.isOver) return;
   game.setPaused(document.pointerLockElement !== renderer.domElement);
 });

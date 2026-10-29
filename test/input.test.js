@@ -44,6 +44,29 @@ describe('Input', () => {
     expect(input.wasPressed('WheelUp', 'WheelDown')).toBe(false);
   });
 
+  it('while playing, keeps browser shortcuts (F12, Ctrl+Shift+C, Ctrl+wheel zoom) from firing, but not Esc or F11', () => {
+    const target = new EventTarget();
+    const input = new Input(target);
+    input.isCapturing = true;
+    const shortcuts = ['F12', 'KeyC', 'KeyU', 'KeyS'].map((code) => key('keydown', code));
+    const kept = ['Escape', 'F11'].map((code) => key('keydown', code));
+    const zoom = Object.assign(new Event('wheel', { cancelable: true }), { deltaY: -100, ctrlKey: true });
+    [...shortcuts, ...kept, zoom].forEach((event) => target.dispatchEvent(event));
+
+    expect(shortcuts.every((event) => event.defaultPrevented)).toBe(true);
+    expect(kept.some((event) => event.defaultPrevented)).toBe(false);
+    expect(zoom.defaultPrevented).toBe(true);
+    expect(input.wasPressed('F12', 'KeyC', 'WheelUp')).toBe(true); // the game still sees them
+  });
+
+  it('in the menus, leaves the browser its shortcuts', () => {
+    const target = new EventTarget();
+    new Input(target);
+    const devTools = key('keydown', 'F12');
+    target.dispatchEvent(devTools);
+    expect(devTools.defaultPrevented).toBe(false);
+  });
+
   it('keeps Space from scrolling the page', () => {
     const target = new EventTarget();
     new Input(target);
